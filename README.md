@@ -2,6 +2,16 @@
 
 Personal extensions for [Pi coding agent](https://github.com/earendil-works/pi-coding-agent).
 
+## Packages
+
+### `pi-minimal-footer`
+
+Minimal footer with context gauge, model info, and subscription usage bars. Supports CommandCode, Claude Max, Codex, Copilot, Gemini, MiniMax, Kimi Coding.
+
+```bash
+pi install npm:@kvoon/pi-minimal-footer
+```
+
 ## Extensions
 
 ### `macos-notify.ts`
