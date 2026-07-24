@@ -1,0 +1,35 @@
+{
+  "name": "@kvoon/pi-minimal-footer",
+  "version": "0.1.11",
+  "description": "Minimal footer for pi with context gauge and subscription usage bars (+ CommandCode)",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "footer",
+    "context",
+    "usage",
+    "coding-agent"
+  ],
+  "author": "Kevin Kwong",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kvoon/pi-minimal-footer.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "assets/claude.png",
+    "assets/codex.png",
+    "README.md",
+    "LICENSE"
+  ]
+}
