@@ -4,6 +4,14 @@ Personal extensions for [Pi coding agent](https://github.com/earendil-works/pi-c
 
 ## Packages
 
+### `pi-split-fork`
+
+Forks the current Pi session into a new Pi agent in a right-hand Herdr pane.
+
+```bash
+pi install npm:@kvoon/pi-split-fork
+```
+
 ### `pi-minimal-footer`
 
 Minimal footer with context gauge, model info, and subscription usage bars. Supports CommandCode, Claude Max, Codex, Copilot, Gemini, MiniMax, Kimi Coding.

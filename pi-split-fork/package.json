@@ -1,0 +1,24 @@
+{
+  "name": "@kvoon/pi-split-fork",
+  "version": "0.1.0",
+  "description": "Fork the current Pi session into a new Herdr pane",
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "herdr", "session"],
+  "author": "Kevin Kwong",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kvoon3/pi-extensions.git",
+    "directory": "pi-split-fork"
+  },
+  "engines": { "node": ">=18.0.0" },
+  "publishConfig": { "access": "public" },
+  "pi": { "extensions": ["./index.ts"] },
+  "files": ["index.ts", "README.md", "LICENSE"],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.75.0"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": { "optional": true }
+  }
+}
