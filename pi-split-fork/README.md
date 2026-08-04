@@ -23,11 +23,11 @@ pi install ./pi-split-fork
 
 ```text
 /split-fork
-/split-fork --down
-/split-fork --right Continue by implementing the tests
+/split-fork down
+/split-fork right Continue by implementing the tests
 /split-fork Continue by implementing the tests
 ```
 
-The split defaults to `--right`. Direction flags are only recognized as the first argument; everything else is sent as the prompt.
+The split defaults to `right`. The direction is only recognized as the first argument; everything else is sent as the prompt.
 
 The fork copies the current active session branch. If the original agent is busy, only entries already committed to the session are copied.
