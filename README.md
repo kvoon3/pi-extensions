@@ -6,7 +6,7 @@ Personal extensions for [Pi coding agent](https://github.com/earendil-works/pi-c
 
 ### `pi-split-fork`
 
-Forks the current Pi session into a new Pi agent in a right-hand Herdr pane.
+Forks the current Pi session into a new Pi agent in a right or downward Herdr pane.
 
 ```bash
 pi install npm:@kvoon/pi-split-fork

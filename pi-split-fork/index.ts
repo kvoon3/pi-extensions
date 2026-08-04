@@ -54,14 +54,22 @@ async function startPiAgent(
 
 export default function (pi: ExtensionAPI): void {
   pi.registerCommand("split-fork", {
-    description: "Fork this session into a new Pi agent in a right-hand Herdr pane. Usage: /split-fork [optional prompt]",
+    description: "Fork this session into a new Pi agent in a Herdr pane. Usage: /split-fork [--right|--down] [optional prompt]",
     handler: async (args, ctx) => {
       const wasBusy = !ctx.isIdle();
-      const prompt = args.trim();
+      const input = args.trim();
+      const [first, ...rest] = input.split(/\s+/);
+      const hasDirection = first === "--right" || first === "--down";
+      if (hasDirection && (rest[0] === "--right" || rest[0] === "--down")) {
+        ctx.ui.notify("Choose one split direction: --right or --down.", "warning");
+        return;
+      }
+      const direction = first === "--down" ? "down" : "right";
+      const prompt = hasDirection ? rest.join(" ") : input;
       const forkFile = await createForkedSession(ctx);
 
       const split = await pi.exec("herdr", [
-        "pane", "split", "--current", "--direction", "right", "--cwd", ctx.cwd, "--focus",
+        "pane", "split", "--current", "--direction", direction, "--cwd", ctx.cwd, "--focus",
       ]);
       if (split.code !== 0) {
         ctx.ui.notify(`Failed to create Herdr pane: ${errorText(split)}`, "error");
