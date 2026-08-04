@@ -23,7 +23,7 @@ async function createForkedSession(ctx: ExtensionCommandContext): Promise<string
       cwd: header?.cwd ?? ctx.cwd,
       parentSession: sessionFile,
     }),
-    ...ctx.sessionManager.getBranch().map(JSON.stringify),
+    ...ctx.sessionManager.getBranch().map((entry) => JSON.stringify(entry)),
   ].join("\n") + "\n";
 
   await fs.writeFile(forkFile, lines, "utf8");
