@@ -55,6 +55,14 @@ async function startPiAgent(
 export default function (pi: ExtensionAPI): void {
   pi.registerCommand("split-fork", {
     description: "Fork this session into a new Pi agent in a Herdr pane. Usage: /split-fork [right|down] [optional prompt]",
+    getArgumentCompletions: (prefix) => {
+      if (prefix.includes(" ")) return null;
+      const directions = [
+        { value: "right", label: "right", description: "Split beside the current pane" },
+        { value: "down", label: "down", description: "Split below the current pane" },
+      ].filter(({ value }) => value.startsWith(prefix));
+      return directions.length > 0 ? directions : null;
+    },
     handler: async (args, ctx) => {
       const wasBusy = !ctx.isIdle();
       const input = args.trim();

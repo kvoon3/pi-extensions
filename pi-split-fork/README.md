@@ -28,6 +28,6 @@ pi install ./pi-split-fork
 /split-fork Continue by implementing the tests
 ```
 
-The split defaults to `right`. The direction is only recognized as the first argument; everything else is sent as the prompt.
+The split defaults to `right`. The direction is only recognized as the first argument; everything else is sent as the prompt. Type the direction prefix and press Tab to complete it.
 
 The fork copies the current active session branch. If the original agent is busy, only entries already committed to the session are copied.
