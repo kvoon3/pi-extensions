@@ -4,14 +4,14 @@
  * Custom footer with context gauge + subscription usage bars.
  * Auto-detects provider from current model and shows relevant usage.
  *
- * Supports: Claude Max, Codex, Copilot, Gemini, MiniMax Token Plan, Kimi Coding, CommandCode
+ * Supports: Claude Max, Codex, Copilot, Gemini, MiniMax Token Plan, Kimi Coding, CommandCode, OpenCode Go, OpenCode Zen
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 import { execSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -813,6 +813,105 @@ async function fetchCommandCodeUsage(): Promise<UsageSnapshot> {
   }
 }
 
+// ============ Provider Cost Accounting (OpenCode Zen / Go) ============
+// Neither OpenCode Zen nor Go exposes usage/balance over their API keys
+// (the console dashboard is OAuth-only; the chat API returns no quota
+// headers). Instead we sum pi's per-message dollar cost recorded in session
+// files. Caveats: counts pi usage only (opencode CLI usage on the same key
+// is invisible). Go's monthly limit resets on the subscription anniversary
+// (unknowable), so only 5h + calendar-week (UTC Monday) windows are shown;
+// Zen is pay-per-use so we show spend over the last 30 days.
+
+const COST_SESSION_ROOT = join(homedir(), ".pi", "agent", "sessions");
+const COST_SCAN_AGE_MS = 32 * 24 * 60 * 60 * 1000; // covers the 30-day display + slack
+const GO_LIMITS: Record<string, number> = { "5h": 12, Week: 30 }; // USD
+
+const costFileCache = new Map<
+  string,
+  { size: number; mtimeMs: number; pairs: Array<{ ts: number; cost: number; provider: string }> }
+>();
+
+function collectProviderCosts(provider: string): Array<{ ts: number; cost: number }> {
+  const cutoff = Date.now() - COST_SCAN_AGE_MS;
+  const out: Array<{ ts: number; cost: number }> = [];
+
+  try {
+    for (const rel of readdirSync(COST_SESSION_ROOT, { recursive: true })) {
+      if (typeof rel !== "string" || !rel.endsWith(".jsonl")) continue;
+      const path = join(COST_SESSION_ROOT, rel);
+      const st = statSync(path);
+      if (st.mtimeMs < cutoff) continue;
+
+      const cached = costFileCache.get(path);
+      if (cached && cached.size === st.size && cached.mtimeMs === st.mtimeMs) {
+        for (const p of cached.pairs) if (p.provider === provider) out.push({ ts: p.ts, cost: p.cost });
+        continue;
+      }
+
+      const pairs: Array<{ ts: number; cost: number; provider: string }> = [];
+      for (const line of readFileSync(path, "utf8").split("\n")) {
+        if (!line) continue;
+        try {
+          const e = JSON.parse(line);
+          const m = e?.message;
+          if (e?.type === "message" && m?.role === "assistant") {
+            const ts = m.timestamp;
+            const cost = m.usage?.cost?.total;
+            if (typeof ts === "number" && typeof cost === "number" && typeof m.provider === "string") {
+              pairs.push({ ts, cost, provider: m.provider });
+            }
+          }
+        } catch {}
+      }
+      costFileCache.set(path, { size: st.size, mtimeMs: st.mtimeMs, pairs });
+      for (const p of pairs) if (p.provider === provider) out.push({ ts: p.ts, cost: p.cost });
+    }
+  } catch {}
+
+  return out;
+}
+
+function weekStartUtcMs(now: number): number {
+  const d = new Date(now);
+  const mondayOffset = (d.getUTCDay() + 6) % 7; // Monday = 0
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - mondayOffset);
+}
+
+async function fetchOpenCodeGoUsage(): Promise<UsageSnapshot> {
+  const costs = collectProviderCosts("opencode-go");
+  const now = Date.now();
+  const sumSince = (since: number) => costs.reduce((acc, c) => (c.ts >= since ? acc + c.cost : acc), 0);
+  const windows: RateWindow[] = [];
+
+  const fiveStart = now - 5 * 3600 * 1000;
+  const fiveCosts = costs.filter((c) => c.ts >= fiveStart);
+  const fiveEnd = (fiveCosts.length ? Math.max(...fiveCosts.map((c) => c.ts)) : fiveStart) + 5 * 3600 * 1000;
+  windows.push({
+    label: "5h",
+    usedPercent: clampPercent((sumSince(fiveStart) / GO_LIMITS["5h"]) * 100),
+    resetsIn: formatResetTime(new Date(fiveEnd)),
+  });
+
+  const weekStart = weekStartUtcMs(now);
+  windows.push({
+    label: "Week",
+    usedPercent: clampPercent((sumSince(weekStart) / GO_LIMITS.Week) * 100),
+    resetsIn: formatResetTime(new Date(weekStart + 7 * 24 * 3600 * 1000)),
+  });
+
+  return { provider: "OpenCode Go", windows, fetchedAt: now };
+}
+
+async function fetchOpenCodeZenUsage(): Promise<UsageSnapshot> {
+  const costs = collectProviderCosts("opencode");
+  const spent = costs.reduce((acc, c) => acc + c.cost, 0);
+  return {
+    provider: "OpenCode Zen",
+    windows: [{ label: `$${spent.toFixed(2)} spent`, usedPercent: 0 }],
+    fetchedAt: Date.now(),
+  };
+}
+
 // ============ Provider Detection ============
 
 // Map pi provider names to our internal usage provider keys
@@ -825,6 +924,8 @@ const PROVIDER_MAP: Record<string, string> = {
   "minimax-cn": "minimax-cn", // MiniMax China plan
   "kimi-coding": "kimi-coding", // Kimi plan
   commandcode: "commandcode", // Command Code API
+  opencode: "opencode-zen", // OpenCode Zen pay-per-use
+  "opencode-go": "opencode-go", // OpenCode Go subscription
 };
 
 function detectProvider(modelProvider: string): string | null {
@@ -849,6 +950,10 @@ async function fetchUsageForProvider(provider: string): Promise<UsageSnapshot> {
       return fetchKimiUsage();
     case "commandcode":
       return fetchCommandCodeUsage();
+    case "opencode-go":
+      return fetchOpenCodeGoUsage();
+    case "opencode-zen":
+      return fetchOpenCodeZenUsage();
     default:
       return { provider: "Unknown", windows: [], error: "unknown-provider", fetchedAt: Date.now() };
   }

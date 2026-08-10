@@ -24,6 +24,8 @@ Forked from `@ogulcancelik/pi-minimal-footer` with added CommandCode support.
 | MiniMax        | 5h + weekly rolling windows (Token Plan, credit-based)  |
 | MiniMax CN     | Same as MiniMax, China endpoint                        |
 | Kimi Coding    | 5h + weekly rolling windows (Plan)                     |
+| OpenCode Go    | 5h + weekly rolling windows (local cost accounting)   |
+| OpenCode Zen   | Pay-per-use spend, last 30 days (local cost accounting) |
 
 ## Install
 
