@@ -1,7 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { execSync } from "node:child_process";
 
+// osascript is only available on macOS.
+const isMacOS = process.platform === "darwin";
+
 function notify(title: string, body: string) {
+  if (!isMacOS) return;
   const script = `display notification "${body}" with title "${title}" sound name "Purr"`;
   execSync(`osascript -e '${script}'`, { timeout: 3000 });
 }
