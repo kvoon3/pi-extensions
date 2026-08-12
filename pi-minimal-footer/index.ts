@@ -10,7 +10,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -102,12 +102,19 @@ function sameGitCache(a: GitCache | null, b: GitCache | null): boolean {
 function refreshGitCache(): boolean {
   let next: GitCache | null = null;
 
+  // Windows: execSync routes through cmd.exe, where the POSIX `2>/dev/null`
+  // redirect fails and cmd prints the error straight to the console
+  // (bypassing the captured pipes) — it lands on pi's input row. Use spawnSync
+  // with stdio instead, which spawns git directly with no shell involved.
   try {
-    const status = execSync("git status --porcelain=v2 --branch 2>/dev/null", {
+    const result = spawnSync("git", ["status", "--porcelain=v2", "--branch"], {
       encoding: "utf8",
       timeout: 1000,
+      stdio: ["ignore", "pipe", "ignore"],
     });
-    next = parseGitStatus(status.trimEnd());
+    if (result.status === 0) {
+      next = parseGitStatus((result.stdout ?? "").trimEnd());
+    }
   } catch {
     next = null;
   }
@@ -196,7 +203,9 @@ function getClaudeToken(): string | undefined {
   const auth = loadAuthJson();
   if (auth.anthropic?.access) return auth.anthropic.access;
 
-  // Fallback: Claude CLI keychain (macOS)
+  // Fallback: Claude CLI keychain (macOS only — `security` doesn't exist on
+  // Windows, and the POSIX redirect would make cmd.exe print to the console)
+  if (process.platform !== "darwin") return undefined;
   try {
     const keychainData = execSync(
       'security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null',
