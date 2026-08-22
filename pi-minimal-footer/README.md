@@ -9,6 +9,7 @@ Forked from `@ogulcancelik/pi-minimal-footer` with added CommandCode support.
 - **Context gauge** — working directory, git branch, model, thinking level, context window usage with token counts
 - **Subscription usage bars** — rolling window quotas with reset timers for supported providers
 - **CommandCode support** — balance display ($3.05/$10) + rate limits (5h, weekly)
+- **OpenRouter support** — remaining pay-as-you-go balance from your OAuth-minted or API key
 - **Auto-refresh** — fetches usage on startup and model switch, then every 5 minutes
 - **Git integration** — branch name, dirty state, ahead/behind counts
 
@@ -26,6 +27,7 @@ Forked from `@ogulcancelik/pi-minimal-footer` with added CommandCode support.
 | Kimi Coding    | 5h + weekly rolling windows (Plan)                     |
 | OpenCode Go    | 5h + weekly rolling windows (local cost accounting)   |
 | OpenCode Zen   | Pay-per-use spend, last 30 days (local cost accounting) |
+| OpenRouter     | Remaining credit balance ($X.XX left)                  |
 
 ## Install
 

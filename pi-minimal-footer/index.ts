@@ -4,7 +4,7 @@
  * Custom footer with context gauge + subscription usage bars.
  * Auto-detects provider from current model and shows relevant usage.
  *
- * Supports: Claude Max, Codex, Copilot, Gemini, MiniMax Token Plan, Kimi Coding, CommandCode, OpenCode Go, OpenCode Zen
+ * Supports: Claude Max, Codex, Copilot, Gemini, MiniMax Token Plan, Kimi Coding, CommandCode, OpenCode Go, OpenCode Zen, OpenRouter
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -822,6 +822,47 @@ async function fetchCommandCodeUsage(): Promise<UsageSnapshot> {
   }
 }
 
+async function fetchOpenRouterUsage(): Promise<UsageSnapshot> {
+  const apiKey = getApiKey("openrouter", "OPENROUTER_API_KEY");
+  const providerLabel = "OpenRouter";
+  if (!apiKey) {
+    return { provider: providerLabel, windows: [], error: "no-auth", fetchedAt: Date.now() };
+  }
+
+  try {
+    // Account-level credit balance: total_credits - total_usage = remaining.
+    const res = await fetchWithTimeout("https://openrouter.ai/api/v1/credits", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+
+    if (!res.ok) {
+      return { provider: providerLabel, windows: [], error: `HTTP ${res.status}`, fetchedAt: Date.now() };
+    }
+
+    const data = (await res.json()) as any;
+    const totalCredits = Number(data?.data?.total_credits);
+    const used = Number(data?.data?.total_usage);
+
+    if (!Number.isFinite(totalCredits) || !Number.isFinite(used)) {
+      return { provider: providerLabel, windows: [], error: "no-usage-data", fetchedAt: Date.now() };
+    }
+
+    // Match the dashboard's "Total available" number: remaining pay-as-you-go
+    // balance = total credits ever purchased - total usage.
+    const remaining = Math.max(0, totalCredits - used);
+    const windows: RateWindow[] = [
+      {
+        label: `$${remaining.toFixed(2)} left`,
+        usedPercent: clampPercent((Math.max(0, used) / Math.max(totalCredits, 0.01)) * 100),
+      },
+    ];
+
+    return { provider: providerLabel, windows, fetchedAt: Date.now() };
+  } catch (e) {
+    return { provider: providerLabel, windows: [], error: String(e), fetchedAt: Date.now() };
+  }
+}
+
 // ============ Provider Cost Accounting (OpenCode Zen / Go) ============
 // Neither OpenCode Zen nor Go exposes usage/balance over their API keys
 // (the console dashboard is OAuth-only; the chat API returns no quota
@@ -935,6 +976,7 @@ const PROVIDER_MAP: Record<string, string> = {
   commandcode: "commandcode", // Command Code API
   opencode: "opencode-zen", // OpenCode Zen pay-per-use
   "opencode-go": "opencode-go", // OpenCode Go subscription
+  openrouter: "openrouter", // OpenRouter credits
 };
 
 function detectProvider(modelProvider: string): string | null {
@@ -963,6 +1005,8 @@ async function fetchUsageForProvider(provider: string): Promise<UsageSnapshot> {
       return fetchOpenCodeGoUsage();
     case "opencode-zen":
       return fetchOpenCodeZenUsage();
+    case "openrouter":
+      return fetchOpenRouterUsage();
     default:
       return { provider: "Unknown", windows: [], error: "unknown-provider", fetchedAt: Date.now() };
   }
