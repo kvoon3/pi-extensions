@@ -2,7 +2,7 @@
 
 Minimal footer for [pi](https://github.com/earendil-works/pi) that replaces the default footer with a compact display: context gauge, model info, and subscription usage bars.
 
-Forked from `@ogulcancelik/pi-minimal-footer` with added CommandCode support.
+Forked from `@ogulcancelik/pi-minimal-footer` with more providers support.
 
 ## Features
 
