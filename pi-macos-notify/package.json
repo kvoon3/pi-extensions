@@ -17,13 +17,5 @@
   "pi": {
     "extensions": ["./index.ts"]
   },
-  "files": ["index.ts", "README.md", "LICENSE"],
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.75.0"
-  },
-  "peerDependenciesMeta": {
-    "@earendil-works/pi-coding-agent": {
-      "optional": true
-    }
-  }
+  "files": ["index.ts", "README.md", "LICENSE"]
 }
