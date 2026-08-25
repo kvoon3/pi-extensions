@@ -19,5 +19,3 @@ With errors:
 ```
 Pi — ⚠️ 3 turns · 12 tools · 2 errors · 45k tokens · 2m30s
 ```
-
-Transient errors that Pi's auto-retry recovers from do not trigger a notification — the notification fires once, after the final settled outcome.
