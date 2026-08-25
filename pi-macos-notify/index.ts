@@ -18,6 +18,13 @@ function fmtDuration(ms: number): string {
 
 export default function (pi: ExtensionAPI) {
   pi.on("agent_end", async (event) => {
+    // `agent_end` fires every low-level run, including ones that Pi is about
+    // to auto-retry. `event.willRetry` is true when the last assistant message
+    // hit a retryable error and Pi still has retry budget left. Skip the
+    // notification in that case — the next (or later) `agent_end` with
+    // `willRetry: false` will report the final outcome.
+    if (event.willRetry) return;
+
     const msgs = event.messages;
     const turns = msgs.filter((m) => m.role === "assistant").length;
     const tools = msgs.filter((m) => m.role === "toolResult").length;
