@@ -52,40 +52,67 @@ async function startPiAgent(
   return pi.exec("herdr", args);
 }
 
+type ForkTarget = "right" | "down" | "tab" | "workspace";
+
+async function createTargetPane(
+  pi: ExtensionAPI,
+  target: ForkTarget,
+  cwd: string,
+): Promise<{ paneId?: string; error?: string }> {
+  if (target === "tab" || target === "workspace") {
+    const sub = target === "tab" ? "tab" : "workspace";
+    const result = await pi.exec("herdr", [
+      sub, "create", "--cwd", cwd, "--focus",
+    ]);
+    if (result.code !== 0) return { error: errorText(result) };
+    try {
+      const paneId = JSON.parse(result.stdout).result?.root_pane?.pane_id;
+      if (paneId) return { paneId };
+      return { error: `Herdr created a ${sub} but returned no root pane ID.` };
+    } catch {
+      return { error: `Herdr created a ${sub} but returned unparseable output.` };
+    }
+  }
+
+  const result = await pi.exec("herdr", [
+    "pane", "split", "--current", "--direction", target, "--cwd", cwd, "--focus",
+  ]);
+  if (result.code !== 0) return { error: errorText(result) };
+  try {
+    const paneId = JSON.parse(result.stdout).result?.pane?.pane_id;
+    if (paneId) return { paneId };
+    return { error: "Herdr created a pane but returned no pane ID." };
+  } catch {
+    return { error: "Herdr created a pane but returned unparseable output." };
+  }
+}
+
 export default function (pi: ExtensionAPI): void {
   pi.registerCommand("split-fork", {
-    description: "Fork this session into a new Pi agent in a Herdr pane. Usage: /split-fork [right|down] [optional prompt]",
+    description: "Fork this session into a new Pi agent in a Herdr pane, tab, or workspace. Usage: /split-fork [right|down|tab|workspace] [optional prompt]",
     getArgumentCompletions: (prefix) => {
       if (prefix.includes(" ")) return null;
-      const directions = [
+      const targets = [
         { value: "right", label: "right", description: "Split beside the current pane" },
         { value: "down", label: "down", description: "Split below the current pane" },
+        { value: "tab", label: "tab", description: "Create a new Herdr tab" },
+        { value: "workspace", label: "workspace", description: "Create a new Herdr workspace" },
       ].filter(({ value }) => value.startsWith(prefix));
-      return directions.length > 0 ? directions : null;
+      return targets.length > 0 ? targets : null;
     },
     handler: async (args, ctx) => {
       const wasBusy = !ctx.isIdle();
       const input = args.trim();
       const [first, ...rest] = input.split(/\s+/);
-      const hasDirection = first === "right" || first === "down";
-      const direction = first === "down" ? "down" : "right";
-      const prompt = hasDirection ? rest.join(" ") : input;
+      const hasTarget = first === "right" || first === "down" || first === "tab" || first === "workspace";
+      const target: ForkTarget = hasTarget ? (first as ForkTarget) : "right";
+      const prompt = hasTarget ? rest.join(" ") : input;
       const forkFile = await createForkedSession(ctx);
 
-      const split = await pi.exec("herdr", [
-        "pane", "split", "--current", "--direction", direction, "--cwd", ctx.cwd, "--focus",
-      ]);
-      if (split.code !== 0) {
-        ctx.ui.notify(`Failed to create Herdr pane: ${errorText(split)}`, "error");
-        return;
-      }
-
-      let paneId: string | undefined;
-      try {
-        paneId = JSON.parse(split.stdout).result?.pane?.pane_id;
-      } catch {}
-      if (!paneId) {
-        ctx.ui.notify("Herdr created a pane but returned no pane ID.", "error");
+      const { paneId, error } = await createTargetPane(pi, target, ctx.cwd);
+      if (error || !paneId) {
+        const what = target === "workspace" ? "workspace" : target === "tab" ? "tab" : "pane";
+        ctx.ui.notify(`Failed to create Herdr ${what}: ${error ?? "no pane ID"}`, "error");
         return;
       }
 
@@ -104,7 +131,8 @@ export default function (pi: ExtensionAPI): void {
         }
       }
 
-      ctx.ui.notify(`Forked into Herdr pane ${paneId}${prompt ? " and sent prompt" : ""}.`, "info");
+      const where = target === "workspace" ? `workspace (pane ${paneId})` : target === "tab" ? `tab (pane ${paneId})` : `pane ${paneId}`;
+      ctx.ui.notify(`Forked into Herdr ${where}${prompt ? " and sent prompt" : ""}.`, "info");
       if (wasBusy) {
         ctx.ui.notify("The fork contains committed entries only; the original in-flight turn continues.", "info");
       }
