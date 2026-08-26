@@ -1,6 +1,6 @@
 {
   "name": "@kvoon/pi-split-fork",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Fork the current Pi session into a new Herdr pane, right or down",
   "type": "module",
   "keywords": ["pi-package", "pi-extension", "herdr", "session"],
