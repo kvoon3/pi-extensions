@@ -1,0 +1,19 @@
+{
+  "name": "@kvoon/pi-windows-system-theme",
+  "version": "0.1.0",
+  "description": "Sync Pi's theme with Windows system app mode (light/dark), event-driven via RegNotifyChangeKeyValue. Fixes dark tool/user-message blocks in herdr where OSC 11 / DSR 996 detection times out.",
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "windows", "theme", "herdr"],
+  "author": "Kevin Kwong",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kvoon3/pi-extensions.git",
+    "directory": "pi-windows-system-theme"
+  },
+  "engines": { "node": ">=18.0.0" },
+  "publishConfig": { "access": "public" },
+  "os": ["win32"],
+  "pi": { "extensions": ["./index.ts"] },
+  "files": ["index.ts", "README.md", "LICENSE"]
+}

@@ -27,3 +27,11 @@ Sends a macOS notification at the end of each Pi session with a summary: turn co
 ```bash
 pi install npm:@kvoon/pi-macos-notify
 ```
+
+### `pi-windows-system-theme`
+
+Syncs Pi's theme with Windows system app mode (light/dark), event-driven via `RegNotifyChangeKeyValue`. Fixes dark tool/user-message blocks in herdr where OSC 11 / DSR 996 detection times out.
+
+```bash
+pi install npm:@kvoon/pi-windows-system-theme
+```
