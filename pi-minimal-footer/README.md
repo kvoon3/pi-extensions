@@ -25,6 +25,7 @@ Forked from `@ogulcancelik/pi-minimal-footer` with more providers support.
 | MiniMax        | 5h + weekly rolling windows (Token Plan, credit-based)  |
 | MiniMax CN     | Same as MiniMax, China endpoint                        |
 | Kimi Coding    | 5h + weekly rolling windows (Plan)                     |
+| GLM Coding CN  | 5h + weekly rolling windows (Zhipu bigmodel.cn)        |
 | OpenCode Go    | 5h + weekly rolling windows (local cost accounting)   |
 | OpenCode Zen   | Pay-per-use spend, last 30 days (local cost accounting) |
 | OpenRouter     | Remaining credit balance ($X.XX left)                  |

@@ -4,7 +4,7 @@
  * Custom footer with context gauge + subscription usage bars.
  * Auto-detects provider from current model and shows relevant usage.
  *
- * Supports: Claude Max, Codex, Copilot, Gemini, MiniMax Token Plan, Kimi Coding, CommandCode, OpenCode Go, OpenCode Zen, OpenRouter
+ * Supports: Claude Max, Codex, Copilot, Gemini, MiniMax Token Plan, Kimi Coding, GLM Coding Plan CN (zai-coding-cn), CommandCode, OpenCode Go, OpenCode Zen, OpenRouter
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -652,6 +652,58 @@ async function fetchMinimaxUsage(provider: "minimax" | "minimax-cn"): Promise<Us
   }
 }
 
+async function fetchZaiCnUsage(): Promise<UsageSnapshot> {
+  const token = getApiKey("zai-coding-cn", "ZAI_CN_API_KEY");
+  const providerLabel = "GLM Coding";
+  if (!token) {
+    return { provider: providerLabel, windows: [], error: "no-auth", fetchedAt: Date.now() };
+  }
+
+  try {
+    // Official quota endpoint used by zai-org/zai-coding-plugins (glm-plan-usage).
+    // Auth is the raw bigmodel.cn API key, no Bearer prefix (Bearer also accepted).
+    const res = await fetchWithTimeout("https://open.bigmodel.cn/api/monitor/usage/quota/limit", {
+      headers: { Authorization: token, "Content-Type": "application/json" },
+    });
+
+    if (!res.ok) {
+      return { provider: providerLabel, windows: [], error: `HTTP ${res.status}`, fetchedAt: Date.now() };
+    }
+
+    const data = (await res.json()) as any;
+    const windows: RateWindow[] = [];
+
+    // data.data.limits: CREDIT_LIMIT entries per rolling window, e.g.
+    // { unit: 3, number: 5, percentage: 18, nextResetTime: 1788764624065 } = 5h window.
+    for (const limit of data?.data?.limits || []) {
+      const usedPercent = Number(limit?.percentage);
+      if (!Number.isFinite(usedPercent)) continue;
+      windows.push({
+        label: zaiCnWindowLabel(limit),
+        usedPercent: clampPercent(usedPercent),
+        resetsIn: limit?.nextResetTime ? formatResetTime(new Date(Number(limit.nextResetTime))) : undefined,
+      });
+    }
+
+    if (windows.length === 0) {
+      return { provider: providerLabel, windows: [], error: "no-usage-data", fetchedAt: Date.now() };
+    }
+
+    return { provider: providerLabel, windows, fetchedAt: Date.now() };
+  } catch (e) {
+    return { provider: providerLabel, windows: [], error: String(e), fetchedAt: Date.now() };
+  }
+}
+
+/** Window label from a quota limit's unit/number pair (observed: unit 3 = hours, unit 6 = weeks). */
+function zaiCnWindowLabel(limit: any): string {
+  const unit = Number(limit?.unit);
+  const number = Number(limit?.number);
+  if (unit === 3 && number > 0) return `${number}h`;
+  if (unit === 6) return "Week";
+  return "Usage";
+}
+
 async function fetchKimiUsage(): Promise<UsageSnapshot> {
   const token = getKimiToken();
   const endpoint = "https://api.kimi.com/coding/v1/usages";
@@ -973,6 +1025,7 @@ const PROVIDER_MAP: Record<string, string> = {
   minimax: "minimax", // MiniMax Token Plan / Coding Plan
   "minimax-cn": "minimax-cn", // MiniMax China plan
   "kimi-coding": "kimi-coding", // Kimi plan
+  "zai-coding-cn": "zai-coding-cn", // GLM Coding Plan (Zhipu bigmodel.cn)
   commandcode: "commandcode", // Command Code API
   opencode: "opencode-zen", // OpenCode Zen pay-per-use
   "opencode-go": "opencode-go", // OpenCode Go subscription
@@ -999,6 +1052,8 @@ async function fetchUsageForProvider(provider: string): Promise<UsageSnapshot> {
       return fetchMinimaxUsage("minimax-cn");
     case "kimi-coding":
       return fetchKimiUsage();
+    case "zai-coding-cn":
+      return fetchZaiCnUsage();
     case "commandcode":
       return fetchCommandCodeUsage();
     case "opencode-go":

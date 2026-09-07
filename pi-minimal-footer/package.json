@@ -1,6 +1,6 @@
 {
   "name": "@kvoon/pi-minimal-footer",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Minimal footer for pi with context gauge and subscription usage bars (+ CommandCode)",
   "type": "module",
   "keywords": [
