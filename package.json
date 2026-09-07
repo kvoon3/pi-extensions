@@ -1,5 +1,13 @@
 {
   "private": true,
+  "pi": {
+    "extensions": [
+      "./pi-macos-notify/index.ts",
+      "./pi-minimal-footer/index.ts",
+      "./pi-split-fork/index.ts",
+      "./pi-windows-system-theme/index.ts"
+    ]
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "up": "npx taze -I major"
