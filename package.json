@@ -2,7 +2,7 @@
   "private": true,
   "pi": {
     "extensions": [
-      "./pi-macos-notify/index.ts",
+      "./pi-kitty-notify/index.ts",
       "./pi-minimal-footer/index.ts",
       "./pi-split-fork/index.ts",
       "./pi-windows-system-theme/index.ts"

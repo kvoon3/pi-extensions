@@ -20,13 +20,15 @@ Minimal footer with context gauge, model info, and subscription usage bars. Supp
 pi install npm:@kvoon/pi-minimal-footer
 ```
 
-### `pi-macos-notify`
+### `pi-kitty-notify`
 
-Sends a macOS notification at the end of each Pi session with a summary: turn count, tools used, errors, token usage, cost, and duration.
+Sends a notification when Pi finishes a response, with a plain-text preview of the last reply. Uses Herdr's notification API inside Herdr, or OSC 99 directly in kitty.
 
 ```bash
-pi install npm:@kvoon/pi-macos-notify
+pi -e ./pi-kitty-notify/index.ts
 ```
+
+See [setup and behavior](./pi-kitty-notify/README.md).
 
 ### `pi-windows-system-theme`
 

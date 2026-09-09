@@ -1,0 +1,21 @@
+{
+  "name": "@kvoon/pi-kitty-notify",
+  "version": "0.1.0",
+  "description": "Pi reply notifications through Herdr or kitty OSC 99",
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "notify", "kitty", "herdr"],
+  "author": "Kevin Kwong",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kvoon3/pi-extensions.git",
+    "directory": "pi-kitty-notify"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "files": ["index.ts", "README.md", "LICENSE"]
+}
