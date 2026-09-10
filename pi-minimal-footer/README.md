@@ -8,6 +8,7 @@ Forked from `@ogulcancelik/pi-minimal-footer` with more providers support.
 
 - **Context gauge** — working directory, git branch, model, thinking level, context window usage with token counts
 - **Subscription usage bars** — rolling window quotas with reset timers for supported providers
+- **`/usage` command** — print usage for all configured providers in the UI without adding messages to the session or model context
 - **CommandCode support** — balance display ($3.05/$10) + rate limits (5h, weekly)
 - **OpenRouter support** — remaining pay-as-you-go balance from your OAuth-minted or API key
 - **Auto-refresh** — fetches usage on startup and model switch, then every 5 minutes
@@ -23,7 +24,6 @@ Forked from `@ogulcancelik/pi-minimal-footer` with more providers support.
 | GitHub Copilot | Premium interactions + chat quotas                     |
 | Google Gemini  | Pro + Flash remaining quotas                           |
 | MiniMax        | 5h + weekly rolling windows (Token Plan, credit-based)  |
-| MiniMax CN     | Same as MiniMax, China endpoint                        |
 | Kimi Coding    | 5h + weekly rolling windows (Plan)                     |
 | GLM Coding CN  | 5h + weekly rolling windows (Zhipu bigmodel.cn)        |
 | OpenCode Go    | 5h + weekly rolling windows (local cost accounting)   |
@@ -42,6 +42,21 @@ Or via git:
 pi install git:github.com/kvoon/pi-extensions
 ```
 
+## Usage command
+
+```text
+/usage          Show all configured providers
+/usage codex    Show one provider (pi provider names also accepted)
+/usage --all    Include providers without credentials or local data
+/usage --help   List supported provider IDs
+```
+
+Results appear as a UI notification in interactive pi. Neither the report nor a model-facing message is appended to the session, so the report is not restored when reopening a session. No model request is made. The command queries providers concurrently and displays errors per provider. Repeated calls while a query is running do not start another query.
+
+Each provider occupies one table row, with each quota window in a separate aligned column beside its balance or spending. Column headers name the window (e.g. `5h Reset`, `Week Reset`); the value shows a progress bar, the used percentage, and the time until reset. Usage is colored green below 70%, yellow from 70%, and red from 90%. Narrow panes omit progress bars and truncate long cells; query a single provider or widen the pane for more detail.
+
+OpenCode Go and Zen have no usage API, so their numbers are local estimates: they count only pi session costs, not account-wide usage. Zen covers the last 30 days. Go uses the footer's $12/5h and $30/calendar-week limits. Expired credentials must be renewed through the corresponding client; `/usage` does not log in or refresh tokens.
+
 ## Configuration
 
 Environment variables (all optional):
@@ -54,6 +69,8 @@ Environment variables (all optional):
 Accepted false values: `0`, `false`, `no`, `off` (case-insensitive).
 
 ## How it works
+
+Provider authentication and usage queries live in `usage.ts`, shared by the footer and `/usage` command.
 
 The footer reads context usage from the last assistant message's token counts (free — comes with every LLM response). Subscription usage is fetched from each provider's dedicated quota API using your existing auth tokens from `~/.pi/agent/auth.json` or environment variables.
 
