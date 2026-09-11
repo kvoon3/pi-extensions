@@ -9,25 +9,34 @@ import { spawnSync } from 'node:child_process';
 const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // Dependencies are hoisted to the repository root, but a dev install may nest
 // pi-ai under pi-coding-agent — accept either.
-const repoRoot = resolve(pkgRoot, '..');
-const resolveInstalled = (...paths) => {
-  const found = paths.map((p) => resolve(repoRoot, p)).find(existsSync);
-  if (!found) throw new Error(`installed dependency not found: ${paths[0]}`);
+function installedPackage(...relativePaths: string[]): string {
+  const found = relativePaths
+    .map((relativePath) => resolve(pkgRoot, '..', relativePath))
+    .find(existsSync);
+  if (!found) throw new Error(`installed dependency not found: ${relativePaths[0]} — run npm install`);
   return found;
-};
-const compatUrl = pathToFileURL(resolveInstalled(
+}
+const compatUrl = pathToFileURL(installedPackage(
   'node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/compat.js',
   'node_modules/@earendil-works/pi-ai/dist/compat.js',
 )).href;
 // The loader is reached through pi's real dist entry so aliases/virtual modules behave.
-const piRoot = resolveInstalled('node_modules/@earendil-works/pi-coding-agent/dist/index.js');
+const piRoot = installedPackage('node_modules/@earendil-works/pi-coding-agent/dist/index.js');
+
+interface GatewayModel {
+  id: string;
+  context_length: number;
+  max_output_tokens: number;
+  reasoning_efforts?: string[];
+  [key: string]: unknown;
+}
 
 /**
  * Build models from a fake catalog by driving the same code path the extension
  * uses: its fetchModels() maps gateway entries, and we then ask pi which
  * thinking levels those models end up with.
  */
-function levelsFromGateway(models) {
+function levelsFromGateway(models: GatewayModel[]): Record<string, { reasoning: boolean; levels: string[] }> {
   const script = `
     const pkg = ${JSON.stringify(pathToFileURL(piRoot).href)};
     const { loadExtensions, createExtensionRuntime } = await import(pkg.replace('/dist/index.js', '/dist/core/extensions/loader.js'));
@@ -52,7 +61,8 @@ function levelsFromGateway(models) {
     encoding: 'utf8', timeout: 30000,
   });
   if (r.status !== 0) throw new Error(r.stderr || 'script failed');
-  return JSON.parse(r.stdout.trim().split('\n').pop());
+  const lines = String(r.stdout).trim().split('\n');
+  return JSON.parse(lines[lines.length - 1]!);
 }
 
 const ALL_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];

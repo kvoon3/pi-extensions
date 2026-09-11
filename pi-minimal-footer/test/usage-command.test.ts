@@ -10,20 +10,42 @@ import { spawnSync } from 'node:child_process';
 // pi-coding-agent is either nested in the package (dev install) or hoisted to
 // the repo root, so accept whichever exists — publish never ships either.
 const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const loaderPath = [pkgRoot, resolve(pkgRoot, '..')]
-  .map((root) => resolve(root, 'node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js'))
-  .find(existsSync);
-if (!loaderPath) throw new Error('installed @earendil-works/pi-coding-agent not found');
+function installedPackage(relativePath: string): string {
+  const found = [pkgRoot, resolve(pkgRoot, '..')]
+    .map((root) => resolve(root, relativePath))
+    .find(existsSync);
+  if (!found) throw new Error(`installed dependency not found: ${relativePath} — run npm install`);
+  return found;
+}
 
-function run(args, { auth = {}, responses = {}, models = {}, sessions = [], hasUI = true, concurrent = false, columns = 134, env = {} } = {}) {
+interface RunOptions {
+  auth?: Record<string, unknown>;
+  responses?: Record<string, { status?: number; body: unknown }>;
+  models?: Record<string, unknown>;
+  sessions?: unknown[];
+  hasUI?: boolean;
+  concurrent?: boolean;
+  columns?: number;
+  env?: Record<string, string>;
+}
+
+interface RunResult {
+  notifications: { message: string; type: string }[];
+  statuses: [string, string | null][];
+  mutations: [string, unknown[]][];
+  requests: number;
+  requestAuth: (string | null)[];
+}
+
+function run(args: string, { auth = {}, responses = {}, models = {}, sessions = [], hasUI = true, concurrent = false, columns = 134, env = {} }: RunOptions = {}): RunResult {
   const home = mkdtempSync(join(tmpdir(), 'pi-usage-command-'));
   try {
     const agent = join(home, '.pi', 'agent');
     mkdirSync(join(agent, 'sessions'), { recursive: true });
     writeFileSync(join(agent, 'auth.json'), JSON.stringify(auth));
     writeFileSync(join(agent, 'models.json'), JSON.stringify({ providers: models }));
-    writeFileSync(join(agent, 'sessions', 'test.jsonl'), sessions.map(JSON.stringify).join('\n'));
-    const loader = pathToFileURL(loaderPath).href;
+    writeFileSync(join(agent, 'sessions', 'test.jsonl'), sessions.map((session) => JSON.stringify(session)).join('\n'));
+    const loader = pathToFileURL(installedPackage('node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js')).href;
     const script = `
       import childProcess from 'node:child_process';
       import { syncBuiltinESMExports } from 'node:module';
@@ -136,7 +158,7 @@ test('non-UI mode performs no queries or writes', () => {
 });
 
 test('local estimates include only the last 30 days for Zen', () => {
-  const message = (days, cost) => ({ type: 'message', message: {
+  const message = (days: number, cost: number) => ({ type: 'message', message: {
     role: 'assistant', provider: 'opencode', timestamp: Date.now() - days * 86400000,
     usage: { cost: { total: cost } },
   } });
@@ -176,7 +198,7 @@ const WB_BASE = 'https://gw.example/v1';
 // 注意：不能叫 WORKBUDDY_API_KEY 之外的变量——auth.json 是首选真实路径。
 const wbAuth = (key = 'gw-key') => ({ workbuddy: { type: 'api_key', key } });
 
-function wbRun(args, options = {}) {
+function wbRun(args: string, options: RunOptions = {}): RunResult {
   return run(args, {
     auth: wbAuth(),
     responses: { [`${WB_BASE}/usage`]: { body: { total: { remain: 1090, size: 1100, accounts: 1, ok: 1, failed: 0 } } } },
@@ -274,7 +296,7 @@ test('quota columns, percentages, and reset markers align across providers', () 
   });
   const lines = result.notifications[0].message.split('\n');
   const table = lines.filter((line) => /[│┼]/.test(line));
-  const positions = (line, pattern) => [...line.matchAll(pattern)].map((match) => match.index);
+  const positions = (line: string, pattern: RegExp) => [...line.matchAll(pattern)].map((match) => match.index);
   const columns = positions(table[0], /│/g);
   for (const line of table) assert.deepStrictEqual(positions(line, /[│┼]/g), columns);
   const rows = lines.filter((line) => /^(Claude|Codex)\s/.test(line));
