@@ -14,7 +14,7 @@ pi install npm:@kvoon/pi-split-fork
 
 ### `pi-minimal-footer`
 
-Minimal footer with context gauge, model info, and subscription usage bars. Supports Claude Max, Codex, Copilot, Gemini, MiniMax, Kimi Coding, CommandCode, OpenRouter.
+Minimal footer with context gauge, model info, and subscription usage bars. Supports Claude Max, Codex, Copilot, Gemini, MiniMax, Kimi Coding, CommandCode, WorkBuddy, OpenRouter.
 
 ```bash
 pi install npm:@kvoon/pi-minimal-footer
@@ -37,3 +37,13 @@ Syncs Pi's theme with Windows system app mode (light/dark), event-driven via `Re
 ```bash
 pi install npm:@kvoon/pi-windows-system-theme
 ```
+
+### `pi-workbuddy`
+
+Registers a shared [workbuddy2api](https://github.com/Sliverkiss/workbuddy2api) gateway as a Pi provider, with a live model catalog and a 0600 on-disk cache for offline starts. Credentials come from Pi's own `/login` — the extension never touches the API key. Model catalog only; the credits balance is shown by `pi-minimal-footer` from the gateway's `GET /v1/usage`.
+
+```bash
+pi install npm:@kvoon/pi-workbuddy
+```
+
+See [setup and behavior](./pi-workbuddy/README.md).

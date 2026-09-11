@@ -1,0 +1,37 @@
+{
+  "name": "@kvoon/pi-workbuddy",
+  "version": "0.2.0",
+  "description": "WorkBuddy provider for Pi: live model catalog + credits from a local workbuddy2api gateway",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "workbuddy",
+    "codebuddy",
+    "gateway",
+    "provider"
+  ],
+  "author": "Kevin Kwong",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kvoon3/pi-extensions.git",
+    "directory": "pi-workbuddy"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "README.md",
+    "LICENSE"
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "name": "@kvoon/pi-minimal-footer",
-  "version": "0.2.0",
-  "description": "Minimal footer for pi with context gauge and subscription usage bars (+ CommandCode)",
+  "version": "0.4.0",
+  "description": "Minimal footer for pi with context gauge and subscription usage bars (+ CommandCode, WorkBuddy)",
   "type": "module",
   "keywords": [
     "pi-package",
@@ -15,7 +15,8 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kvoon/pi-minimal-footer.git"
+    "url": "git+https://github.com/kvoon3/pi-extensions.git",
+    "directory": "pi-minimal-footer"
   },
   "engines": {
     "node": ">=18.0.0"

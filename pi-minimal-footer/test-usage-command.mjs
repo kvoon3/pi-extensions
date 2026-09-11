@@ -2,28 +2,35 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { join, resolve, dirname } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-function run(args, { auth = {}, responses = {}, sessions = [], hasUI = true, concurrent = false, columns = 134 } = {}) {
+// 相对包根解析，而不是相对 cwd：否则在 pi-minimal-footer/ 里跑测试会拼成
+// pi-minimal-footer/pi-minimal-footer/index.ts 而全部假失败。
+const pkgRoot = dirname(fileURLToPath(import.meta.url));
+
+function run(args, { auth = {}, responses = {}, models = {}, sessions = [], hasUI = true, concurrent = false, columns = 134, env = {} } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'pi-usage-command-'));
   try {
     const agent = join(home, '.pi', 'agent');
     mkdirSync(join(agent, 'sessions'), { recursive: true });
     writeFileSync(join(agent, 'auth.json'), JSON.stringify(auth));
+    writeFileSync(join(agent, 'models.json'), JSON.stringify({ providers: models }));
     writeFileSync(join(agent, 'sessions', 'test.jsonl'), sessions.map(JSON.stringify).join('\n'));
-    const loader = pathToFileURL(resolve('node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js')).href;
+    const loader = pathToFileURL(resolve(pkgRoot, 'node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js')).href;
     const script = `
       import childProcess from 'node:child_process';
       import { syncBuiltinESMExports } from 'node:module';
       childProcess.execSync = () => { throw new Error('credential helpers disabled'); };
       syncBuiltinESMExports();
       const responses = ${JSON.stringify(responses)};
-      Object.defineProperty(process.stdout, "columns", { value: ${columns} });
       let requests = 0;
-      globalThis.fetch = async (url) => {
+      const requestAuth = [];
+      Object.defineProperty(process.stdout, "columns", { value: ${columns} });
+      globalThis.fetch = async (url, init) => {
         requests++;
+        requestAuth.push((init?.headers ?? {})['Authorization'] ?? null);
         const entry = responses[url];
         if (!entry) throw new Error('unexpected network request: secret-token');
         return new Response(JSON.stringify(entry.body), { status: entry.status ?? 200 });
@@ -34,7 +41,7 @@ function run(args, { auth = {}, responses = {}, sessions = [], hasUI = true, con
       for (const method of ['sendMessage', 'sendUserMessage', 'appendEntry']) {
         runtime[method] = (...args) => mutations.push([method, args]);
       }
-      const loaded = await loadExtensions([${JSON.stringify(resolve('pi-minimal-footer/index.ts'))}], process.cwd(), undefined, runtime);
+      const loaded = await loadExtensions([${JSON.stringify(resolve(pkgRoot, 'index.ts'))}], process.cwd(), undefined, runtime);
       if (loaded.errors.length) throw new Error(JSON.stringify(loaded.errors));
       const command = loaded.extensions[0].commands.get('usage');
       if (!command) throw new Error('/usage not registered');
@@ -52,10 +59,10 @@ function run(args, { auth = {}, responses = {}, sessions = [], hasUI = true, con
       const first = command.handler(${JSON.stringify(args)}, ctx);
       if (${concurrent}) await command.handler(${JSON.stringify(args)}, ctx);
       await first;
-      console.log(JSON.stringify({ notifications, statuses, mutations, requests }));
+      console.log(JSON.stringify({ notifications, statuses, mutations, requests, requestAuth }));
     `;
     const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
-      encoding: 'utf8', env: { HOME: home, USERPROFILE: home, CODEX_HOME: join(home, '.codex') }, timeout: 15000,
+      encoding: 'utf8', env: { HOME: home, USERPROFILE: home, CODEX_HOME: join(home, '.codex'), PI_CODING_AGENT_DIR: join(home, '.pi', 'agent'), ...env }, timeout: 15000,
     });
     assert.equal(result.status, 0, result.stderr);
     const output = JSON.parse(result.stdout);
@@ -72,12 +79,16 @@ const responses = {
   'https://api.anthropic.com/api/oauth/usage': { status: 429, body: {} },
 };
 
-test('default hides unconfigured providers; --all shows all 11', () => {
+test('default hides unconfigured providers; --all shows every supported provider', () => {
   const empty = run('');
   assert.match(empty.notifications[0].message, /No configured providers/);
   assert.equal(empty.requests, 0);
   const all = run('--all');
-  assert.equal((all.notifications[0].message.match(/Not configured/g) ?? []).length, 11);
+  const listed = all.notifications[0].message.match(/Not configured/g) ?? [];
+  const help = run('--help').notifications[0].message;
+  // Provider list comes from /usage --help; --all must render one row per provider.
+  const supported = (help.split('Providers: ')[1] ?? '').split(',').length;
+  assert.equal(listed.length, supported);
   assert.deepEqual(all.statuses.at(-1), ['usage', null]);
 });
 
@@ -152,6 +163,70 @@ test('MiniMax CN is no longer selectable or listed', () => {
   assert.equal(result.requests, 0);
   assert.match(result.notifications[0].message, /Usage: \/usage/);
   assert.doesNotMatch(run('--all').notifications[0].message, /MiniMax CN/);
+});
+
+// WorkBuddy：凭证由 pi 的 /login 存在 auth.json，地址默认局域网网关
+// （可用 WORKBUDDY_BASE_URL 覆盖）。测试用同一个环境变量把地址指到假的网关。
+const WB_BASE = 'https://gw.example/v1';
+// 注意：不能叫 WORKBUDDY_API_KEY 之外的变量——auth.json 是首选真实路径。
+const wbAuth = (key = 'gw-key') => ({ workbuddy: { type: 'api_key', key } });
+
+function wbRun(args, options = {}) {
+  return run(args, {
+    auth: wbAuth(),
+    responses: { [`${WB_BASE}/usage`]: { body: { total: { remain: 1090, size: 1100, accounts: 1, ok: 1, failed: 0 } } } },
+    ...options,
+  });
+}
+
+test('WorkBuddy credits land in the Balance column, not a quota bar', () => {
+  const result = wbRun('workbuddy', { env: { WORKBUDDY_BASE_URL: WB_BASE } });
+  const message = result.notifications[0].message;
+  assert.equal(result.requests, 1);
+  assert.match(message, /WorkBuddy/);
+  assert.match(message, /1090 \/ 1100 credits/);
+  // 积分不是 rate window：不能变成一根 bar，也不能出现在 Reset 列。
+  assert.doesNotMatch(message, /Credits Reset/);
+  const row = message.split('\n').filter((line) => line.startsWith('WorkBuddy'));
+  assert.equal(row.length, 1);
+  assert.doesNotMatch(row[0], /━/);
+});
+
+// 未登录（auth.json 无 workbuddy）→ 不查询，报 Not configured。
+test('WorkBuddy without a stored key reports no-auth', () => {
+  const result = run('workbuddy', { env: { WORKBUDDY_BASE_URL: WB_BASE } });
+  assert.equal(result.requests, 0);
+  assert.match(result.notifications[0].message, /Not configured/);
+});
+
+// 关键回归：key 必须来自 pi /login 写入的 auth.json，且随请求发出。
+// （历史 bug：只读 models.json 导致无 Authorization → 网关 401 → 余额列变 "—"。）
+test('WorkBuddy takes the key from auth.json written by /login', () => {
+  const result = wbRun('workbuddy', { env: { WORKBUDDY_BASE_URL: WB_BASE } });
+  assert.equal(result.requests, 1);
+  assert.deepEqual(result.requestAuth, ['Bearer gw-key']);
+  assert.match(result.notifications[0].message, /1090 \/ 1100 credits/);
+});
+
+// WORKBUDDY_API_KEY 作为无登录环境（CI/脚本）的快捷方式。
+test('WORKBUDDY_API_KEY overrides the stored credential', () => {
+  const result = run('workbuddy', {
+    responses: { [`${WB_BASE}/usage`]: { body: { total: { remain: 42, size: 100, accounts: 1, ok: 1 } } } },
+    env: { WORKBUDDY_BASE_URL: WB_BASE, WORKBUDDY_API_KEY: 'env-key' },
+  });
+  assert.deepEqual(result.requestAuth, ['Bearer env-key']);
+  assert.match(result.notifications[0].message, /42 \/ 100 credits/);
+});
+
+// 多账号部分失败：只标账号数，不影响余额行渲染。
+test('WorkBuddy shows the healthy account ratio when a query fails', () => {
+  const result = wbRun('workbuddy', {
+    env: { WORKBUDDY_BASE_URL: WB_BASE },
+    responses: { [`${WB_BASE}/usage`]: { body: {
+      total: { remain: 300, size: 500, accounts: 3, ok: 2, failed: 1 },
+    } } },
+  });
+  assert.match(result.notifications[0].message, /300 \/ 500 credits · 2\/3 accounts/);
 });
 
 test('narrow tables keep a single row per provider', () => {

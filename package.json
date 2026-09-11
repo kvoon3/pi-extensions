@@ -5,7 +5,8 @@
       "./pi-kitty-notify/index.ts",
       "./pi-minimal-footer/index.ts",
       "./pi-split-fork/index.ts",
-      "./pi-windows-system-theme/index.ts"
+      "./pi-windows-system-theme/index.ts",
+      "./pi-workbuddy/index.ts"
     ]
   },
   "scripts": {
@@ -13,6 +14,7 @@
     "up": "npx taze -I major"
   },
   "devDependencies": {
+    "@earendil-works/pi-ai": "^0.84.2",
     "@earendil-works/pi-coding-agent": "^0.84.2",
     "@earendil-works/pi-tui": "^0.84.2",
     "@types/node": "^24.0.0",

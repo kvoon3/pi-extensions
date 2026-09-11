@@ -10,6 +10,7 @@ Forked from `@ogulcancelik/pi-minimal-footer` with more providers support.
 - **Subscription usage bars** — rolling window quotas with reset timers for supported providers
 - **`/usage` command** — print usage for all configured providers in the UI without adding messages to the session or model context
 - **CommandCode support** — balance display ($3.05/$10) + rate limits (5h, weekly)
+- **WorkBuddy support** — gateway pool credits (remain/size + healthy account count) from a local [workbuddy2api](https://github.com/Sliverkiss/workbuddy2api) gateway
 - **OpenRouter support** — remaining pay-as-you-go balance from your OAuth-minted or API key
 - **Auto-refresh** — fetches usage on startup and model switch, then every 5 minutes
 - **Git integration** — branch name, dirty state, ahead/behind counts
@@ -28,6 +29,7 @@ Forked from `@ogulcancelik/pi-minimal-footer` with more providers support.
 | GLM Coding CN  | 5h + weekly rolling windows (Zhipu bigmodel.cn)        |
 | OpenCode Go    | 5h + weekly rolling windows (local cost accounting)   |
 | OpenCode Zen   | Pay-per-use spend, last 30 days (local cost accounting) |
+| WorkBuddy      | Gateway pool credits (remain/size + healthy accounts)  |
 | OpenRouter     | Remaining credit balance ($X.XX left)                  |
 
 ## Install
@@ -56,6 +58,8 @@ Results appear as a UI notification in interactive pi. Neither the report nor a 
 Each provider occupies one table row, with each quota window in a separate aligned column beside its balance or spending. Column headers name the window (e.g. `5h Reset`, `Week Reset`); the value shows a progress bar, the used percentage, and the time until reset. Usage is colored green below 70%, yellow from 70%, and red from 90%. Narrow panes omit progress bars and truncate long cells; query a single provider or widen the pane for more detail.
 
 OpenCode Go and Zen have no usage API, so their numbers are local estimates: they count only pi session costs, not account-wide usage. Zen covers the last 30 days. Go uses the footer's $12/5h and $30/calendar-week limits. Expired credentials must be renewed through the corresponding client; `/usage` does not log in or refresh tokens.
+
+WorkBuddy credits come from the gateway's `GET /v1/usage`. The key is read from `~/.pi/agent/auth.json` — the same credential `/login` stores — so there is no second place to configure, and the endpoint defaults to the LAN gateway (`WORKBUDDY_BASE_URL` overrides it, `WORKBUDDY_API_KEY` supplies the key without `/login`). Without a stored key the row is omitted rather than reporting 401s. Credits are integer billing units, not currency, so they render as `1090 / 1100 credits` in the Balance column and as a plain `1090/1100 credits` segment in the footer (no bar, no reset — it is a balance, not a rolling window). A multi-account pool shows `· 2/3 accounts` when some accounts fail to report. Requires [pi-workbuddy](../pi-workbuddy) for the model catalog.
 
 ## Configuration
 
@@ -98,4 +102,5 @@ Anthropic's OAuth usage endpoint (`/api/oauth/usage`) has been returning persist
 
 - Replaces the default pi footer entirely via `ctx.ui.setFooter()`
 - Auth tokens are read from `~/.pi/agent/auth.json` (populated by `/login`) or standard env vars (`ANTHROPIC_API_KEY`, `MINIMAX_API_KEY`, etc.)
+- WorkBuddy uses the same path: the key stored by `/login`, never a copy in `models.json`
 - Providers without auth simply don't show a usage bar — no errors

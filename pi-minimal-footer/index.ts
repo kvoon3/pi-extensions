@@ -237,6 +237,11 @@ export default function (pi: ExtensionAPI) {
       // Money labels ($X.XX/$Y) show just the label; rate limits keep the bar
       if (w.label.startsWith("$")) {
         segments.push(dim(w.label));
+      } else if (w.credits) {
+        // 积分是余额，不是滚动窗口：画 bar 会让人误以为是限流进度（2% 用量的 bar 没意义）。
+        const c = w.credits;
+        const pool = c.okAccounts < c.accounts ? ` · ${c.okAccounts}/${c.accounts}` : "";
+        segments.push(dim(c.size > 0 ? `${c.remain}/${c.size} credits${pool}` : `${c.remain} credits${pool}`));
       } else {
         segments.push(
           fitFooterSegment(width, [

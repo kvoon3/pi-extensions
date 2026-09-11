@@ -8,6 +8,8 @@ export interface RateWindow {
   usedPercent: number;
   resetsIn?: string; // human readable "2h38m"
   money?: { currency: "USD"; used: number; remaining?: number; limit?: number };
+  /** WorkBuddy 积分池：整数积分，无货币含义。accounts/okAccounts 为网关账号总数/可用数。 */
+  credits?: { remain: number; size: number; accounts: number; okAccounts: number };
 }
 
 export interface UsageSnapshot {
@@ -884,6 +886,87 @@ async function fetchOpenCodeZenUsage(): Promise<UsageSnapshot> {
   };
 }
 
+// ---- WorkBuddy 网关余额（局域网多账号积分池）----
+//
+// 网关是局域网共享服务，扩展只负责注册 provider；凭证由 pi 的 /login 存进 auth.json。
+// 这里读 auth.json 里 pi 存的那个 key（不自己解析任何私有配置），
+// 网关地址默认取局域网服务，可用 WORKBUDDY_BASE_URL 覆盖（与 pi-workbuddy 同一约定）。
+// 未登录时不查询：不把无凭证变成一堆 401。
+const WORKBUDDY_DEFAULT_BASE_URL = "http://192.168.1.13:7863/v1";
+
+interface WorkbuddyUsage {
+  baseUrl: string;
+  apiKey?: string;
+}
+
+/** 网关地址：WORKBUDDY_BASE_URL 覆盖，否则用局域网默认地址。 */
+function workbuddyBaseUrl(): string {
+  const raw = process.env.WORKBUDDY_BASE_URL?.trim();
+  return (raw || WORKBUDDY_DEFAULT_BASE_URL).replace(/\/+$/, "");
+}
+
+/** 读 pi 存的 WorkBuddy api_key（/login 写入 auth.json）。 */
+function readWorkbuddyApiKey(): string | undefined {
+  const dir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
+  try {
+    const auth = JSON.parse(readFileSync(join(dir, "auth.json"), "utf-8"));
+    const entry = auth?.workbuddy;
+    // pi 存 api_key 形态（不导出旧式 oauth access，那是另一套流程）
+    return resolveAuthValue(entry?.key);
+  } catch {
+    return undefined;
+  }
+}
+
+/** 没登录（且无环境变量 key）时不查询：网关恒要求 key，盲请求只会产生 401 噪声。 */
+function resolveWorkbuddyGateway(): WorkbuddyUsage | null {
+  const apiKey =
+    resolveAuthValue(process.env.WORKBUDDY_API_KEY) ?? readWorkbuddyApiKey();
+  if (!apiKey) return null;
+  return { baseUrl: workbuddyBaseUrl(), apiKey };
+}
+
+async function fetchWorkbuddyUsage(): Promise<UsageSnapshot> {
+  const gateway = resolveWorkbuddyGateway();
+  const providerLabel = "WorkBuddy";
+  if (!gateway) return { provider: providerLabel, windows: [], error: "no-auth", fetchedAt: Date.now() };
+
+  try {
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (gateway.apiKey) headers.Authorization = `Bearer ${gateway.apiKey}`;
+    const url = `${gateway.baseUrl.replace(/\/$/, "")}/usage`;
+    const res = await fetchWithTimeout(url, { headers }, 6000);
+    if (!res.ok) {
+      return { provider: providerLabel, windows: [], error: `HTTP ${res.status}`, fetchedAt: Date.now() };
+    }
+
+    // 端点不保证 TotalDosage/Credits 字段存在（老网关）：缺失视作无数据，不猜。
+    const data = (await res.json()) as any;
+    const remain = Number(data?.total?.remain);
+    const size = Number(data?.total?.size);
+    if (!Number.isFinite(remain)) {
+      return { provider: providerLabel, windows: [], error: "no-usage-data", fetchedAt: Date.now() };
+    }
+
+    const accounts = Number(data?.total?.accounts) || 0;
+    const okAccounts = Number(data?.total?.ok) || 0;
+    const used = size > 0 ? clampPercent(((size - remain) / size) * 100) : 0;
+    return {
+      provider: providerLabel,
+      // 积分是整数计费单位（不是美元）：窗口 label 用 credits 前缀，表格的 Balance 列
+      // 再用 formatMoney 渲染成 "90 / 600 credits"，不用 $ 以免和真实货币混淆。
+      windows: [{
+        label: "credits",
+        usedPercent: used,
+        credits: { remain, size, accounts, okAccounts },
+      }],
+      fetchedAt: Date.now(),
+    };
+  } catch (e) {
+    return { provider: providerLabel, windows: [], error: String(e), fetchedAt: Date.now() };
+  }
+}
+
 // ============ Provider Detection ============
 
 // Map pi provider names to our internal usage provider keys
@@ -896,6 +979,7 @@ export const PROVIDER_MAP: Record<string, string> = {
   "kimi-coding": "kimi-coding", // Kimi plan
   "zai-coding-cn": "zai-coding-cn", // GLM Coding Plan (Zhipu bigmodel.cn)
   commandcode: "commandcode", // Command Code API
+  workbuddy: "workbuddy", // WorkBuddy 本地网关（多账号积分池）
   opencode: "opencode-zen", // OpenCode Zen pay-per-use
   "opencode-go": "opencode-go", // OpenCode Go subscription
   openrouter: "openrouter", // OpenRouter credits
@@ -923,6 +1007,8 @@ export async function fetchUsageForProvider(provider: string): Promise<UsageSnap
       return fetchZaiCnUsage();
     case "commandcode":
       return fetchCommandCodeUsage();
+    case "workbuddy":
+      return fetchWorkbuddyUsage();
     case "opencode-go":
       return fetchOpenCodeGoUsage();
     case "opencode-zen":
