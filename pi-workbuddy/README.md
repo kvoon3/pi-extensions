@@ -17,6 +17,7 @@ That's the whole setup. The key is stored by pi in `~/.pi/agent/auth.json`, and 
 - **Provider registration** — `workbuddy` pointed at the gateway, with `authHeader` so pi sends `Authorization: Bearer <key>`.
 - **Login via pi** — no custom auth code. Registering without an `oauth` block makes pi's own `/login` offer a "WorkBuddy" entry that prompts for the key.
 - **Live model catalog** — fetches `/v1/models` before initial model selection, so cold starts and `--list-models` see real models.
+- **Thinking levels from the gateway** — maps the gateway's `reasoning_efforts` onto pi thinking levels, so new models come with correct levels instead of hand-maintained overrides.
 - **Refresh after login** — pi re-syncs credentials with network access disabled, which would leave the list empty right after logging in. This extension detects a credential and fetches anyway, so logging in is enough to get models.
 - **Cached fallback** — snapshots to `<agentDir>/workbuddy-models-cache.json` (mode 0600). An unreachable gateway falls back to the cache instead of leaving you with zero models.
 - **`/workbuddy-refresh`** — force a model refresh.
@@ -33,7 +34,18 @@ Optional environment variables:
 
 ## Model overrides
 
-Reasoning levels are still configurable per model through `models.json`, exactly as with any pi provider — `modelOverrides` applies on top of the extension-registered catalog:
+Reasoning levels are derived automatically. The gateway reports each model's
+supported thinking levels in `/v1/models` as `reasoning_efforts`, and the
+extension maps them onto pi's thinking levels (the two vocabularies are
+identical, so no conversion table is needed). When the gateway adds or removes
+a model, its levels follow automatically — nothing to maintain here.
+
+A model is treated as non-reasoning when the gateway reports no efforts, or
+only `off`. That is deliberate: an unreported list means "not reported", not
+"does not support thinking".
+
+`models.json` `modelOverrides` still works and takes precedence, so you can
+pin a model's levels by hand if the gateway's list ever needs overriding:
 
 ```json
 {

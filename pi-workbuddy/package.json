@@ -1,6 +1,6 @@
 {
   "name": "@kvoon/pi-workbuddy",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "WorkBuddy provider for Pi: live model catalog + credits from a local workbuddy2api gateway",
   "type": "module",
   "keywords": [
@@ -32,6 +32,10 @@
   "files": [
     "index.ts",
     "README.md",
-    "LICENSE"
-  ]
+    "LICENSE",
+    "test-reasoning.mjs"
+  ],
+  "scripts": {
+    "test": "node --test test-reasoning.mjs"
+  }
 }

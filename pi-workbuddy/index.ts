@@ -34,6 +34,39 @@ interface GatewayModel {
   id: string;
   context_length?: number;
   max_output_tokens?: number;
+  /** Upstream reasoning.supportedEfforts, passed through by the gateway.
+   *  Absent when upstream did not report it (not the same as "no reasoning"). */
+  reasoning_efforts?: string[];
+}
+
+/** pi thinking levels, lowest first. Matches the gateway's effortRank vocabulary. */
+const thinkingLevels = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+
+/**
+ * Derive pi's reasoning config from the gateway's efforts list.
+ *
+ * The two vocabularies are identical (off/minimal/low/medium/high/xhigh/max),
+ * so levels map to themselves. pi only needs the map to know which levels are
+ * unsupported — `null` marks one — so present levels are set to their own name.
+ *
+ * pi additionally treats xhigh/max as unsupported unless the map has an entry
+ * for them (see getSupportedThinkingLevels), so they must be listed explicitly.
+ *
+ * `off` is deliberately not written: pi derives it from `reasoning` being set,
+ * and a null there would disable thinking entirely.
+ */
+function reasoningConfig(efforts: string[] | undefined): Pick<Model<"openai-completions">, "reasoning" | "thinkingLevelMap"> {
+  const supported = new Set((efforts ?? []).map((effort) => effort.trim().toLowerCase()));
+  // Treat an explicit "off" list the same as unreported: nothing to offer.
+  if (![...supported].some((level) => level !== "off")) {
+    return { reasoning: false };
+  }
+
+  const thinkingLevelMap: Record<string, string | null> = {};
+  for (const level of thinkingLevels) {
+    thinkingLevelMap[level] = supported.has(level) ? level : null;
+  }
+  return { reasoning: true, thinkingLevelMap };
 }
 
 function baseUrl(): string {
@@ -57,7 +90,7 @@ function toModel(gatewayModel: GatewayModel, endpoint: string): Model<"openai-co
     provider: providerId,
     api: "openai-completions",
     baseUrl: endpoint,
-    reasoning: false,
+    ...reasoningConfig(gatewayModel.reasoning_efforts),
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: tokenLimit(gatewayModel.context_length, 128000),
