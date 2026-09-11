@@ -16,7 +16,7 @@ import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Model, ModelsStoreEntry } from "@earendil-works/pi-ai";
-import { ModelRuntime, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { readStoredCredential, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const providerId = "workbuddy";
 
@@ -127,25 +127,22 @@ async function loadCachedSnapshot(cachePath: string, endpoint: string): Promise<
 
 export default async function workbuddy(pi: ExtensionAPI): Promise<void> {
   const agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+  const authPath = join(agentDir, "auth.json");
   const cachePath = join(agentDir, "workbuddy-models-cache.json");
   const endpoint = baseUrl();
 
   // Read the credential pi already holds; registering without it still makes
   // the provider appear in /login, where the key gets supplied.
-  const runtime = await ModelRuntime.create({
-    authPath: join(agentDir, "auth.json"),
-    modelsPath: join(agentDir, "models.json"),
-    modelsStorePath: join(agentDir, "models-store.json"),
-    refreshOnCreate: false,
-  });
-
+  // Read the stored key directly rather than through ModelRuntime.getAuth().
+  // getAuth() resolves against the composed provider list, but this extension is
+  // still loading when it needs the key — "workbuddy" is not registered yet, so
+  // getAuth() returns undefined and the first startup finds no key even after
+  // /login. readStoredCredential() is a plain auth.json read with no such
+  // dependency. It does not expand $ENV/!command indirection, which is fine
+  // here: /login stores a literal key.
   async function resolveApiKey(): Promise<string | undefined> {
-    try {
-      const auth = await runtime.getAuth(providerId, { signal: AbortSignal.timeout(modelsTimeoutMs) });
-      return auth?.auth.apiKey;
-    } catch {
-      return undefined;
-    }
+    const credential = readStoredCredential(providerId, authPath);
+    return credential?.type === "api_key" ? credential.key : undefined;
   }
 
   let snapshot = await loadCachedSnapshot(cachePath, endpoint);

@@ -1,6 +1,6 @@
 {
   "name": "@kvoon/pi-workbuddy",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "WorkBuddy provider for Pi: live model catalog + credits from a local workbuddy2api gateway",
   "type": "module",
   "keywords": [
