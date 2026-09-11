@@ -34,37 +34,37 @@ interface GatewayModel {
   id: string;
   context_length?: number;
   max_output_tokens?: number;
-  /** Upstream reasoning.supportedEfforts, passed through by the gateway.
-   *  Absent when upstream did not report it (not the same as "no reasoning"). */
-  reasoning_efforts?: string[];
 }
 
 /** pi thinking levels, lowest first. Matches the gateway's effortRank vocabulary. */
 const thinkingLevels = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 /**
- * Derive pi's reasoning config from the gateway's efforts list.
+ * Reasoning config for every model: all levels offered unconditionally.
  *
- * The two vocabularies are identical (off/minimal/low/medium/high/xhigh/max),
- * so levels map to themselves. pi only needs the map to know which levels are
- * unsupported — `null` marks one — so present levels are set to their own name.
+ * The gateway reports per-model efforts in reasoning_efforts, but upstream only
+ * populates it for a handful of models (4 of 15) while the models it omits do
+ * honour reasoning_effort. Verified against the gateway: deepseek-v4.1-flash,
+ * hy3 and glm-5.2 all return `reasoning_content` for low/high despite
+ * reporting nothing, so trusting that list would quietly remove thinking from
+ * most models.
  *
- * pi additionally treats xhigh/max as unsupported unless the map has an entry
- * for them (see getSupportedThinkingLevels), so they must be listed explicitly.
+ * Offering every level also degrades sensibly: the gateway passes unknown
+ * efforts through, and upstream ignores the ones a model does not implement
+ * (hy3 serves low/high but not max, for instance).
  *
- * `off` is deliberately not written: pi derives it from `reasoning` being set,
- * and a null there would disable thinking entirely.
+ * Every level maps to itself because the vocabularies are identical
+ * (off/minimal/low/medium/high/xhigh/max). The map exists so pi knows which
+ * levels are unsupported, and it must list xhigh/max explicitly — pi treats
+ * absent entries as unsupported for those two.
+ *
+ * `off` is deliberately omitted: pi derives it from `reasoning`, and a null
+ * there would disable thinking outright.
  */
-function reasoningConfig(efforts: string[] | undefined): Pick<Model<"openai-completions">, "reasoning" | "thinkingLevelMap"> {
-  const supported = new Set((efforts ?? []).map((effort) => effort.trim().toLowerCase()));
-  // Treat an explicit "off" list the same as unreported: nothing to offer.
-  if (![...supported].some((level) => level !== "off")) {
-    return { reasoning: false };
-  }
-
+function reasoningConfig(): Pick<Model<"openai-completions">, "reasoning" | "thinkingLevelMap"> {
   const thinkingLevelMap: Record<string, string | null> = {};
   for (const level of thinkingLevels) {
-    thinkingLevelMap[level] = supported.has(level) ? level : null;
+    thinkingLevelMap[level] = level;
   }
   return { reasoning: true, thinkingLevelMap };
 }
@@ -90,7 +90,7 @@ function toModel(gatewayModel: GatewayModel, endpoint: string): Model<"openai-co
     provider: providerId,
     api: "openai-completions",
     baseUrl: endpoint,
-    ...reasoningConfig(gatewayModel.reasoning_efforts),
+    ...reasoningConfig(),
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: tokenLimit(gatewayModel.context_length, 128000),

@@ -15,8 +15,8 @@ const compatUrl = pathToFileURL(
 
 /**
  * Build models from a fake catalog by driving the same code path the extension
- * uses: its fetchModels() maps gateway entries through reasoningConfig(), and we
- * then ask pi which thinking levels those models end up with.
+ * uses: its fetchModels() maps gateway entries, and we then ask pi which
+ * thinking levels those models end up with.
  */
 function levelsFromGateway(models) {
   const script = `
@@ -46,36 +46,36 @@ function levelsFromGateway(models) {
   return JSON.parse(r.stdout.trim().split('\n').pop());
 }
 
-test('reasoning levels are derived from the gateway efforts list', () => {
-  const models = [
-    { id: 'hy3', context_length: 192000, max_output_tokens: 64000, reasoning_efforts: ['off', 'low', 'high'] },
-    { id: 'glm-5.2', context_length: 1000000, max_output_tokens: 48000, reasoning_efforts: ['off', 'high', 'xhigh'] },
-    { id: 'flash', context_length: 1000000, max_output_tokens: 128000, reasoning_efforts: ['off', 'low', 'high', 'max'] },
-  ];
-  const got = levelsFromGateway(models);
+const ALL_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
-  // xhigh/max must be listed explicitly in thinkingLevelMap, so this catches a
-  // naive implementation that only records supported levels and drops them.
-  assert.deepEqual(got.hy3, { reasoning: true, levels: ['off', 'low', 'high'] });
-  assert.deepEqual(got['glm-5.2'], { reasoning: true, levels: ['off', 'high', 'xhigh'] });
-  assert.deepEqual(got.flash, { reasoning: true, levels: ['off', 'low', 'high', 'max'] });
-});
-
-test('models without reported efforts offer no thinking', () => {
+test('every model offers all thinking levels, reported or not', () => {
+  // Upstream reports efforts for only a few models, but the models it omits do
+  // honour reasoning_effort, so the reported list must not gate the offering.
   const got = levelsFromGateway([
-    { id: 'auto', context_length: 168000, max_output_tokens: 32000 },
-    { id: 'off-only', context_length: 1000, max_output_tokens: 100, reasoning_efforts: ['off'] },
-    { id: 'empty', context_length: 1000, max_output_tokens: 100, reasoning_efforts: [] },
+    { id: 'hy3', context_length: 192000, max_output_tokens: 64000 },                                  // unreported
+    { id: 'glm-5.3', context_length: 1000000, max_output_tokens: 48000, reasoning_efforts: ['low', 'high', 'max'] },
+    { id: 'auto', context_length: 168000, max_output_tokens: 32000, reasoning_efforts: ['off'] },     // reported as no reasoning
   ]);
-  for (const id of ['auto', 'off-only', 'empty']) {
-    assert.deepEqual(got[id], { reasoning: false, levels: ['off'] }, `${id} should not offer thinking`);
+
+  for (const id of ['hy3', 'glm-5.3', 'auto']) {
+    assert.equal(got[id].reasoning, true, `${id} should offer thinking`);
+    // xhigh/max are included because pi only accepts them when the map lists
+    // them explicitly — a naive map of supported levels would drop both.
+    assert.deepEqual(got[id].levels, ALL_LEVELS, `${id} levels`);
   }
 });
 
-test('catalog entries with unexpected levels do not crash the mapping', () => {
-  // Defensive: a future upstream might add levels pi does not know about.
-  const got = levelsFromGateway([
-    { id: 'future', context_length: 1000, max_output_tokens: 100, reasoning_efforts: ['off', 'ULTRA', ' High '] },
+test('the offered levels do not depend on reasoning_efforts', () => {
+  const withEfforts = levelsFromGateway([
+    { id: 'm', context_length: 1000, max_output_tokens: 100, reasoning_efforts: ['low', 'high'] },
   ]);
-  assert.deepEqual(got.future, { reasoning: true, levels: ['off', 'high'] });
+  const withoutEfforts = levelsFromGateway([
+    { id: 'm', context_length: 1000, max_output_tokens: 100 },
+  ]);
+  assert.deepEqual(withoutEfforts.m, withEfforts.m);
+});
+
+test('a model without reasoning info still gets its other fields', () => {
+  const got = levelsFromGateway([{ id: 'plain', context_length: 128000, max_output_tokens: 8192 }]);
+  assert.deepEqual(got.plain, { reasoning: true, levels: ALL_LEVELS });
 });
