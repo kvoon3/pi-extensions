@@ -1,14 +1,19 @@
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { test, assert } from 'vitest';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-// 相对包根解析，而不是相对 cwd：否则在 pi-minimal-footer/ 里跑测试会拼成
-// pi-minimal-footer/pi-minimal-footer/index.ts 而全部假失败。
-const pkgRoot = dirname(fileURLToPath(import.meta.url));
+// Resolve relative to the package root, not cwd: running from pi-minimal-footer/
+// would otherwise build pi-minimal-footer/pi-minimal-footer/index.ts and fail.
+// pi-coding-agent is either nested in the package (dev install) or hoisted to
+// the repo root, so accept whichever exists — publish never ships either.
+const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const loaderPath = [pkgRoot, resolve(pkgRoot, '..')]
+  .map((root) => resolve(root, 'node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js'))
+  .find(existsSync);
+if (!loaderPath) throw new Error('installed @earendil-works/pi-coding-agent not found');
 
 function run(args, { auth = {}, responses = {}, models = {}, sessions = [], hasUI = true, concurrent = false, columns = 134, env = {} } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'pi-usage-command-'));
@@ -18,7 +23,7 @@ function run(args, { auth = {}, responses = {}, models = {}, sessions = [], hasU
     writeFileSync(join(agent, 'auth.json'), JSON.stringify(auth));
     writeFileSync(join(agent, 'models.json'), JSON.stringify({ providers: models }));
     writeFileSync(join(agent, 'sessions', 'test.jsonl'), sessions.map(JSON.stringify).join('\n'));
-    const loader = pathToFileURL(resolve(pkgRoot, 'node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js')).href;
+    const loader = pathToFileURL(loaderPath).href;
     const script = `
       import childProcess from 'node:child_process';
       import { syncBuiltinESMExports } from 'node:module';
@@ -66,7 +71,7 @@ function run(args, { auth = {}, responses = {}, models = {}, sessions = [], hasU
     });
     assert.equal(result.status, 0, result.stderr);
     const output = JSON.parse(result.stdout);
-    assert.deepEqual(output.mutations, [], 'usage must not write any session/model messages');
+    assert.deepStrictEqual(output.mutations, [], 'usage must not write any session/model messages');
     return output;
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -89,7 +94,7 @@ test('default hides unconfigured providers; --all shows every supported provider
   // Provider list comes from /usage --help; --all must render one row per provider.
   const supported = (help.split('Providers: ')[1] ?? '').split(',').length;
   assert.equal(listed.length, supported);
-  assert.deepEqual(all.statuses.at(-1), ['usage', null]);
+  assert.deepStrictEqual(all.statuses.at(-1), ['usage', null]);
 });
 
 test('partial failure preserves balances and does not write session messages', () => {
@@ -98,14 +103,14 @@ test('partial failure preserves balances and does not write session messages', (
   assert.match(report, /HTTP 429/);
   assert.match(report, /\$16\.75 left/);
   assert.equal(result.requests, 2);
-  assert.deepEqual(result.statuses.at(-1), ['usage', null]);
+  assert.deepStrictEqual(result.statuses.at(-1), ['usage', null]);
 });
 
 test('provider filtering, aliases, help, and unknown arguments', () => {
   const selected = run('anthropic', { auth, responses });
   assert.equal(selected.requests, 1);
   assert.match(selected.notifications[0].message, /Claude/);
-  assert.doesNotMatch(selected.notifications[0].message, /OpenRouter/);
+  assert.notMatch(selected.notifications[0].message, /OpenRouter/);
   assert.match(run('codex').notifications[0].message, /Not configured/);
   for (const input of ['unknown', '--help']) {
     const result = run(input, { auth, responses });
@@ -120,14 +125,14 @@ test('raw network exceptions are redacted; duplicate requests are prevented', ()
   const report = result.notifications.map((n) => n.message).join('\n');
   assert.match(report, /already in progress/);
   assert.match(report, /query-failed/);
-  assert.doesNotMatch(report, /secret-token|test-key/);
+  assert.notMatch(report, /secret-token|test-key/);
 });
 
 test('non-UI mode performs no queries or writes', () => {
   const result = run('', { auth, responses, hasUI: false });
   assert.equal(result.requests, 0);
-  assert.deepEqual(result.notifications, []);
-  assert.deepEqual(result.statuses, []);
+  assert.deepStrictEqual(result.notifications, []);
+  assert.deepStrictEqual(result.statuses, []);
 });
 
 test('local estimates include only the last 30 days for Zen', () => {
@@ -137,7 +142,7 @@ test('local estimates include only the last 30 days for Zen', () => {
   } });
   const result = run('', { sessions: [message(2, 1.25), message(31, 50)] });
   assert.match(result.notifications[0].message, /\$1\.25 \/ 30d/);
-  assert.doesNotMatch(result.notifications[0].message, /Local/);
+  assert.notMatch(result.notifications[0].message, /Local/);
 });
 
 test('multiple quota windows occupy one provider row with reset times', () => {
@@ -155,14 +160,14 @@ test('multiple quota windows occupy one provider row with reset times', () => {
   // Labels live in the column headers; cells keep only bar + percent + reset.
   assert.match(result.notifications[0].message, /5h Reset.*Week Reset/);
   assert.match(lines[0], /32%.*91%/);
-  assert.doesNotMatch(lines[0], /↻/);
+  assert.notMatch(lines[0], /↻/);
 });
 
 test('MiniMax CN is no longer selectable or listed', () => {
   const result = run('minimax-cn');
   assert.equal(result.requests, 0);
   assert.match(result.notifications[0].message, /Usage: \/usage/);
-  assert.doesNotMatch(run('--all').notifications[0].message, /MiniMax CN/);
+  assert.notMatch(run('--all').notifications[0].message, /MiniMax CN/);
 });
 
 // WorkBuddy：凭证由 pi 的 /login 存在 auth.json，地址默认局域网网关
@@ -186,10 +191,10 @@ test('WorkBuddy credits land in the Balance column, not a quota bar', () => {
   assert.match(message, /WorkBuddy/);
   assert.match(message, /\$1090 \/ \$1100/);
   // 积分不是 rate window：不能变成一根 bar，也不能出现在 Reset 列。
-  assert.doesNotMatch(message, /Credits Reset/);
+  assert.notMatch(message, /Credits Reset/);
   const row = message.split('\n').filter((line) => line.startsWith('WorkBuddy'));
   assert.equal(row.length, 1);
-  assert.doesNotMatch(row[0], /━/);
+  assert.notMatch(row[0], /━/);
 });
 
 // 未登录（auth.json 无 workbuddy）→ 不查询，报 Not configured。
@@ -204,7 +209,7 @@ test('WorkBuddy without a stored key reports no-auth', () => {
 test('WorkBuddy takes the key from auth.json written by /login', () => {
   const result = wbRun('workbuddy', { env: { WORKBUDDY_BASE_URL: WB_BASE } });
   assert.equal(result.requests, 1);
-  assert.deepEqual(result.requestAuth, ['Bearer gw-key']);
+  assert.deepStrictEqual(result.requestAuth, ['Bearer gw-key']);
   assert.match(result.notifications[0].message, /\$1090 \/ \$1100/);
 });
 
@@ -214,7 +219,7 @@ test('WORKBUDDY_API_KEY overrides the stored credential', () => {
     responses: { [`${WB_BASE}/usage`]: { body: { total: { remain: 42, size: 100, accounts: 1, ok: 1 } } } },
     env: { WORKBUDDY_BASE_URL: WB_BASE, WORKBUDDY_API_KEY: 'env-key' },
   });
-  assert.deepEqual(result.requestAuth, ['Bearer env-key']);
+  assert.deepStrictEqual(result.requestAuth, ['Bearer env-key']);
   assert.match(result.notifications[0].message, /\$42 \/ \$100/);
 });
 
@@ -271,9 +276,9 @@ test('quota columns, percentages, and reset markers align across providers', () 
   const table = lines.filter((line) => /[│┼]/.test(line));
   const positions = (line, pattern) => [...line.matchAll(pattern)].map((match) => match.index);
   const columns = positions(table[0], /│/g);
-  for (const line of table) assert.deepEqual(positions(line, /[│┼]/g), columns);
+  for (const line of table) assert.deepStrictEqual(positions(line, /[│┼]/g), columns);
   const rows = lines.filter((line) => /^(Claude|Codex)\s/.test(line));
   assert.equal(rows.length, 2);
-  assert.deepEqual(positions(rows[0], /%/g), positions(rows[1], /%/g));
-  assert.deepEqual(positions(rows[0], /↻/g), positions(rows[1], /↻/g));
+  assert.deepStrictEqual(positions(rows[0], /%/g), positions(rows[1], /%/g));
+  assert.deepStrictEqual(positions(rows[0], /↻/g), positions(rows[1], /↻/g));
 });
