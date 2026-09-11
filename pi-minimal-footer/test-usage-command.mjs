@@ -184,7 +184,7 @@ test('WorkBuddy credits land in the Balance column, not a quota bar', () => {
   const message = result.notifications[0].message;
   assert.equal(result.requests, 1);
   assert.match(message, /WorkBuddy/);
-  assert.match(message, /1090 \/ 1100 credits/);
+  assert.match(message, /\$1090 \/ \$1100/);
   // 积分不是 rate window：不能变成一根 bar，也不能出现在 Reset 列。
   assert.doesNotMatch(message, /Credits Reset/);
   const row = message.split('\n').filter((line) => line.startsWith('WorkBuddy'));
@@ -205,7 +205,7 @@ test('WorkBuddy takes the key from auth.json written by /login', () => {
   const result = wbRun('workbuddy', { env: { WORKBUDDY_BASE_URL: WB_BASE } });
   assert.equal(result.requests, 1);
   assert.deepEqual(result.requestAuth, ['Bearer gw-key']);
-  assert.match(result.notifications[0].message, /1090 \/ 1100 credits/);
+  assert.match(result.notifications[0].message, /\$1090 \/ \$1100/);
 });
 
 // WORKBUDDY_API_KEY 作为无登录环境（CI/脚本）的快捷方式。
@@ -215,7 +215,7 @@ test('WORKBUDDY_API_KEY overrides the stored credential', () => {
     env: { WORKBUDDY_BASE_URL: WB_BASE, WORKBUDDY_API_KEY: 'env-key' },
   });
   assert.deepEqual(result.requestAuth, ['Bearer env-key']);
-  assert.match(result.notifications[0].message, /42 \/ 100 credits/);
+  assert.match(result.notifications[0].message, /\$42 \/ \$100/);
 });
 
 // 多账号部分失败：只标账号数，不影响余额行渲染。
@@ -226,7 +226,7 @@ test('WorkBuddy shows the healthy account ratio when a query fails', () => {
       total: { remain: 300, size: 500, accounts: 3, ok: 2, failed: 1 },
     } } },
   });
-  assert.match(result.notifications[0].message, /300 \/ 500 credits · 2\/3 accounts/);
+  assert.match(result.notifications[0].message, /\$300 \/ \$500 · 2\/3 accounts/);
 });
 
 test('narrow tables keep a single row per provider', () => {

@@ -89,11 +89,11 @@ function formatQuota(window: RateWindow, theme: Theme, bars: boolean, labelWidth
 
 function formatMoney(result: Result): string {
   return result.windows.filter((window) => window.money || window.credits).map((window) => {
-    // 积分（WorkBuddy 网关）：整数、无货币含义，标 credits 不用 $
+    // 积分（WorkBuddy 网关）：按 $ 显示（1 积分 = $1）。
     if (window.credits) {
       const { remain, size, accounts, okAccounts } = window.credits;
       const pool = okAccounts < accounts ? ` · ${okAccounts}/${accounts} accounts` : "";
-      return size > 0 ? `${remain} / ${size} credits${pool}` : `${remain} credits${pool}`;
+      return size > 0 ? `$${remain} / $${size}${pool}` : `$${remain}${pool}`;
     }
     const { used, remaining, limit } = window.money!;
     if (result.id === "commandcode" && limit !== undefined) return `$${used.toFixed(2)} / $${limit.toFixed(2)}`;
