@@ -672,25 +672,31 @@ async function fetchCommandCodeUsage(): Promise<UsageSnapshot> {
   };
 
   try {
-    // 1. whoami to get orgId
-    const whoamiRes = await fetchWithTimeout("https://api.commandcode.ai/alpha/whoami", { headers }, 10000);
-    if (!whoamiRes.ok) {
-      return { provider: "CommandCode", windows: [], error: `HTTP ${whoamiRes.status}`, fetchedAt: Date.now() };
-    }
-    const whoami = (await whoamiRes.json()) as any;
-    const orgId: string | null = whoami?.org?.id ?? null;
+    // The API answers billing and usage without an org scope, but takes ~16s per call and
+    // times out at the 5s default. Ask for both scopes at once: the unscoped pair is enough
+    // for a personal account, and only an account that reports an org pays for a second round.
+    const query = (orgId: string | null) => {
+      const orgParam = orgId ? `?orgId=${encodeURIComponent(orgId)}` : "";
+      return Promise.all([
+        fetchWithTimeout(`https://api.commandcode.ai/alpha/billing/credits${orgParam}`, { headers }, 30000),
+        fetchWithTimeout(`https://api.commandcode.ai/alpha/usage/summary${orgParam}`, { headers }, 30000),
+      ]);
+    };
 
-    // Build query suffix only when orgId is present
-    const orgParam = orgId ? `?orgId=${encodeURIComponent(orgId)}` : "";
+    const whoamiReq = fetchWithTimeout("https://api.commandcode.ai/alpha/whoami", { headers }, 30000).then(
+      async (response) => (response.ok ? (((await response.json()) as any)?.org?.id ?? null) : null),
+      () => null,
+    );
 
-    // 2. credits + usage summary in parallel
-    const [creditsRes, summaryRes] = await Promise.all([
-      fetchWithTimeout(`https://api.commandcode.ai/alpha/billing/credits${orgParam}`, { headers }, 10000),
-      fetchWithTimeout(`https://api.commandcode.ai/alpha/usage/summary${orgParam}`, { headers }, 10000),
-    ]);
-
+    let [creditsRes, summaryRes] = await query(null);
     if (!creditsRes.ok || !summaryRes.ok) {
       return { provider: "CommandCode", windows: [], error: `HTTP ${creditsRes.status}/${summaryRes.status}`, fetchedAt: Date.now() };
+    }
+
+    const orgId = await whoamiReq;
+    if (orgId) {
+      const scoped = await query(orgId);
+      if (scoped[0].ok && scoped[1].ok) [creditsRes, summaryRes] = scoped;
     }
 
     const credits = (await creditsRes.json()) as any;
