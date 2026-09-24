@@ -4,8 +4,13 @@
  * The built-in /model selector sorts by current → default → provider.
  * This extension adds a recency-first selector:
  *
- *   - /model-recent opens it
+ *   - ctrl+l opens it (replaces the built-in /model selector)
+ *   - /model-recent opens it too
  *   - ↑↓ navigate, type to fuzzy-filter, enter to switch, esc to cancel
+ *
+ * ctrl+l is intercepted by replacing the editor component with a CustomEditor
+ * subclass — app.model.select is a reserved keybinding that extension
+ * shortcuts cannot override, but a custom editor sees raw input first.
  *
  * History is recorded from model_select events (set | cycle | restore)
  * into ~/.pi/agent/recent-models.json, capped at 50 entries, most recent first.
@@ -14,7 +19,7 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { Model } from "@earendil-works/pi-ai";
 import { Container, fuzzyFilter, getKeybindings, Input, Spacer, Text } from "@earendil-works/pi-tui";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -229,6 +234,24 @@ class RecentModelSelector extends Container {
   }
 }
 
+/**
+ * Editor subclass that swallows ctrl+l before the app keybinding pipeline
+ * can route it to the built-in /model selector. Everything else falls through
+ * unchanged (super keeps autocomplete, app actions, etc.).
+ */
+class RecentModelEditor extends CustomEditor {
+  onOpenRecentModels: (() => void) | undefined;
+
+  handleInput(data: string): void {
+    const kb = getKeybindings();
+    if (!this.isShowingAutocomplete() && kb.matches(data, "app.model.select")) {
+      this.onOpenRecentModels?.();
+      return;
+    }
+    super.handleInput(data);
+  }
+}
+
 /** Exported for tests. */
 export const __internals = { buildItems, itemSearchText, HISTORY_CAP };
 
@@ -237,7 +260,7 @@ export default function (pi: ExtensionAPI): void {
     recordUse(event.model.provider, event.model.id);
   });
 
-  const openSelector = async (ctx: ExtensionCommandContext): Promise<void> => {
+  const openSelector = async (ctx: Pick<ExtensionCommandContext, "mode" | "hasUI" | "ui" | "scopedModels" | "modelRegistry" | "model">): Promise<void> => {
     if (ctx.mode !== "tui" || !ctx.hasUI) return;
 
     const models =
@@ -266,6 +289,15 @@ export default function (pi: ExtensionAPI): void {
       if (!ok) ctx.ui.notify(`No API key for ${picked.provider}/${picked.id}`, "error");
     }
   };
+
+  pi.on("session_start", (_event, ctx) => {
+    if (ctx.mode !== "tui" || !ctx.hasUI) return;
+    ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+      const editor = new RecentModelEditor(tui, theme, keybindings);
+      editor.onOpenRecentModels = () => void openSelector(ctx);
+      return editor;
+    });
+  });
 
   pi.registerCommand("model-recent", {
     description: "Select a model, recently-used first",

@@ -5,8 +5,13 @@ Recency-first model selector for [Pi](https://github.com/earendil-works/pi).
 The built-in `/model` selector sorts by current model → default model → provider.
 This extension adds a second selector that puts **recently used models first**:
 
-- `/model-recent` — open the selector
+- `ctrl+l` — opens it, replacing the built-in model selector
+- `/model-recent` — same selector via command
 - Type to fuzzy-filter, `↑`/`↓` to navigate, `enter` to switch, `esc` to cancel
+
+`ctrl+l` is intercepted by replacing the editor component with a `CustomEditor`
+subclass that sees raw input before the app keybinding pipeline (`app.model.select`
+is a reserved binding that extension shortcuts cannot override).
 
 The list shows models you have actually used (across all sessions, recorded from
 model changes) at the top under `── recent ──`, then the rest of the catalogue

@@ -40,7 +40,7 @@ pi install npm:@kvoon/pi-windows-system-theme
 
 ### `pi-recent-models`
 
-Recency-first model selector: `/model-recent` lists recently-used models first, then the rest of the catalogue. History is recorded from model changes into `~/.pi/agent/recent-models.json`.
+Recency-first model selector: `ctrl+l` (replaces the built-in `/model` selector) or `/model-recent` lists recently-used models first, then the rest of the catalogue. History is recorded from model changes into `~/.pi/agent/recent-models.json`.
 
 ```bash
 pi install npm:@kvoon/pi-recent-models
