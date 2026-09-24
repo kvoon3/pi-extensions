@@ -38,6 +38,14 @@ Syncs Pi's theme with Windows system app mode (light/dark), event-driven via `Re
 pi install npm:@kvoon/pi-windows-system-theme
 ```
 
+### `pi-recent-models`
+
+Recency-first model selector: `shift+ctrl+l` or `/recent-model` lists recently-used models first, then the rest of the catalogue. History is recorded from model changes into `~/.pi/agent/recent-models.json`.
+
+```bash
+pi install npm:@kvoon/pi-recent-models
+```
+
 ### `pi-workbuddy`
 
 Registers a shared [workbuddy2api](https://github.com/Sliverkiss/workbuddy2api) gateway as a Pi provider, with a live model catalog and a 0600 on-disk cache for offline starts. Credentials come from Pi's own `/login` — the extension never touches the API key. Model catalog only; the credits balance is shown by `pi-minimal-footer` from the gateway's `GET /v1/usage`.

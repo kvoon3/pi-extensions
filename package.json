@@ -6,7 +6,8 @@
       "./pi-minimal-footer/index.ts",
       "./pi-split-fork/index.ts",
       "./pi-windows-system-theme/index.ts",
-      "./pi-workbuddy/index.ts"
+      "./pi-workbuddy/index.ts",
+      "./pi-recent-models/index.ts"
     ]
   },
   "scripts": {

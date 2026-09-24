@@ -1,0 +1,30 @@
+{
+  "name": "@kvoon/pi-recent-models",
+  "version": "0.1.0",
+  "description": "Recency-first model selector for Pi: shift+ctrl+l or /recent-model, recently-used models first",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension"
+  ],
+  "author": "Kevin Kwong",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kvoon3/pi-extensions.git",
+    "directory": "pi-recent-models"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "README.md",
+    "LICENSE"
+  ]
+}
