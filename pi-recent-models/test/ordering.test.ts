@@ -7,6 +7,11 @@ const mod = await import(pathToFileURL(resolve(pkgRoot, "index.ts")).href) as {
   __internals: {
     buildItems: (models: any[], history: { provider: string; id: string }[]) => any[];
     itemSearchText: (item: any) => string;
+    removeEntry: (
+      entries: { provider: string; id: string }[],
+      provider: string,
+      id: string,
+    ) => { provider: string; id: string }[];
   };
 };
 
@@ -35,6 +40,16 @@ test("buildItems: history entries missing from catalogue are ignored", () => {
   const items = mod.__internals.buildItems(models, history);
   assert.equal(items.length, 1);
   assert.equal(items[0].recent, false);
+});
+
+test("removeEntry: drops only the exact provider/id pair, order preserved", () => {
+  const history = [
+    { provider: "a", id: "1" },
+    { provider: "b", id: "2" },
+    { provider: "a", id: "1" },
+  ];
+  assert.deepEqual(mod.__internals.removeEntry(history, "a", "1"), [{ provider: "b", id: "2" }]);
+  assert.deepEqual(mod.__internals.removeEntry(history, "a", "2"), history);
 });
 
 test("itemSearchText includes provider, id and name for fuzzy matching", () => {

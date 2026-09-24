@@ -8,6 +8,8 @@ This extension adds a second selector that puts **recently used models first**:
 - `ctrl+l` — opens it, replacing the built-in model selector
 - `/model-recent` — same selector via command
 - Type to fuzzy-filter, `↑`/`↓` to navigate, `enter` to switch, `esc` to cancel
+- `ctrl+d` — remove the highlighted model from the recent list (it stays in the
+  catalogue under `── other ──`; picking it again re-adds it to recents)
 
 `ctrl+l` is intercepted by replacing the editor component with a `CustomEditor`
 subclass that sees raw input before the app keybinding pipeline (`app.model.select`

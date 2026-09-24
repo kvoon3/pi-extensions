@@ -7,6 +7,7 @@
  *   - ctrl+l opens it (replaces the built-in /model selector)
  *   - /model-recent opens it too
  *   - ↑↓ navigate, type to fuzzy-filter, enter to switch, esc to cancel
+ *   - ctrl+d removes the highlighted model from the recent list
  *
  * ctrl+l is intercepted by replacing the editor component with a CustomEditor
  * subclass — app.model.select is a reserved keybinding that extension
@@ -21,7 +22,16 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { CustomEditor, getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { Model } from "@earendil-works/pi-ai";
-import { Container, fuzzyFilter, getKeybindings, Input, Spacer, Text } from "@earendil-works/pi-tui";
+import {
+  Container,
+  fuzzyFilter,
+  getKeybindings,
+  Input,
+  Key,
+  matchesKey,
+  Spacer,
+  Text,
+} from "@earendil-works/pi-tui";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -59,9 +69,17 @@ function saveHistory(entries: HistoryEntry[]): void {
   }
 }
 
+function removeEntry(entries: HistoryEntry[], provider: string, id: string): HistoryEntry[] {
+  return entries.filter((e) => !(e.provider === provider && e.id === id));
+}
+
 function recordUse(provider: string, id: string): void {
-  const rest = loadHistory().filter((e) => !(e.provider === provider && e.id === id));
+  const rest = removeEntry(loadHistory(), provider, id);
   saveHistory([{ provider, id }, ...rest].slice(0, HISTORY_CAP));
+}
+
+function forgetUse(provider: string, id: string): void {
+  saveHistory(removeEntry(loadHistory(), provider, id));
 }
 
 interface ModelItem {
@@ -100,8 +118,10 @@ interface ThemeLike {
  * recency and marks the recent/other boundary.
  */
 class RecentModelSelector extends Container {
-  private readonly items: ModelItem[];
+  private readonly models: readonly Model<any>[];
+  private items: ModelItem[];
   private filtered: ModelItem[];
+  private notice: string | undefined;
   private selectedIndex = 0;
   private readonly currentModel: Model<any> | undefined;
   private readonly searchInput: Input;
@@ -123,7 +143,7 @@ class RecentModelSelector extends Container {
   constructor(
     tui: { requestRender(): void },
     theme: ThemeLike,
-    items: ModelItem[],
+    models: readonly Model<any>[],
     currentModel: Model<any> | undefined,
     onPick: (model: Model<any>) => void,
     onClose: () => void,
@@ -131,8 +151,9 @@ class RecentModelSelector extends Container {
     super();
     this.tui = tui;
     this.theme = theme;
-    this.items = items;
-    this.filtered = items;
+    this.models = models;
+    this.items = buildItems(models, loadHistory());
+    this.filtered = this.items;
     this.currentModel = currentModel;
     this.onPick = onPick;
     this.onClose = onClose;
@@ -151,7 +172,9 @@ class RecentModelSelector extends Container {
     this.addChild(new Spacer(1));
     this.addChild(this.listContainer);
     this.addChild(new Spacer(1));
-    this.addChild(new Text(theme.fg("dim", "  ↑↓ navigate · enter select · esc cancel"), 0, 0));
+    this.addChild(
+      new Text(theme.fg("dim", "  ↑↓ navigate · enter select · ctrl+d remove recent · esc cancel"), 0, 0),
+    );
 
     this.updateList();
   }
@@ -205,6 +228,25 @@ class RecentModelSelector extends Container {
         new Text(theme.fg("muted", `  Model Name: ${selected.model.name}`), 0, 0),
       );
     }
+    if (this.notice) {
+      this.listContainer.addChild(new Text(theme.fg("warning", `  ${this.notice}`), 0, 0));
+    }
+  }
+
+  /** Drop the highlighted model from recent history; it stays under `── other ──`. */
+  private forgetSelected(): void {
+    const item = this.filtered[this.selectedIndex];
+    if (!item) return;
+    if (!item.recent) {
+      this.notice = `${item.model.id} is not in recent history`;
+    } else {
+      forgetUse(item.model.provider, item.model.id);
+      this.items = buildItems(this.models, loadHistory());
+      this.filtered = fuzzyFilter(this.items, this.searchInput.getValue(), itemSearchText);
+      this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filtered.length - 1));
+      this.notice = `Removed ${item.model.id} from recent`;
+    }
+    this.updateList();
   }
 
   handleInput(keyData: string): void {
@@ -224,11 +266,14 @@ class RecentModelSelector extends Container {
       if (item) this.pick(item);
     } else if (kb.matches(keyData, "tui.select.cancel")) {
       this.onClose();
+    } else if (matchesKey(keyData, Key.ctrl("d"))) {
+      this.forgetSelected();
     } else {
       this.searchInput.handleInput(keyData);
       const query = this.searchInput.getValue();
       this.filtered = fuzzyFilter(this.items, query, itemSearchText);
       this.selectedIndex = 0;
+      this.notice = undefined;
       this.updateList();
     }
   }
@@ -253,7 +298,7 @@ class RecentModelEditor extends CustomEditor {
 }
 
 /** Exported for tests. */
-export const __internals = { buildItems, itemSearchText, HISTORY_CAP };
+export const __internals = { buildItems, itemSearchText, removeEntry, HISTORY_CAP };
 
 export default function (pi: ExtensionAPI): void {
   pi.on("model_select", (event) => {
@@ -267,8 +312,7 @@ export default function (pi: ExtensionAPI): void {
       ctx.scopedModels.length > 0
         ? ctx.scopedModels.map((s) => s.model)
         : ctx.modelRegistry.getAvailable();
-    const items = buildItems(models, loadHistory());
-    if (items.length === 0) {
+    if (models.length === 0) {
       ctx.ui.notify("No models available. Use /login to add providers.", "warning");
       return;
     }
@@ -277,7 +321,7 @@ export default function (pi: ExtensionAPI): void {
       return new RecentModelSelector(
         tui,
         theme,
-        items,
+        models,
         ctx.model,
         (model) => done(model),
         () => done(null),
