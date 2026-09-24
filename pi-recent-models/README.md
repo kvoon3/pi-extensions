@@ -5,7 +5,7 @@ Recency-first model selector for [Pi](https://github.com/earendil-works/pi).
 The built-in `/model` selector sorts by current model → default model → provider.
 This extension adds a second selector that puts **recently used models first**:
 
-- `shift+ctrl+l` — open the selector (same as `/recent-model`)
+- `/model-recent` — open the selector
 - Type to fuzzy-filter, `↑`/`↓` to navigate, `enter` to switch, `esc` to cancel
 
 The list shows models you have actually used (across all sessions, recorded from
@@ -27,5 +27,4 @@ pi install ./pi-recent-models
 ## Settings
 
 History lives in `~/.pi/agent/recent-models.json` (last 50 distinct models, most
-recent first). Delete the file to reset. The shortcut can be changed by editing
-`registerShortcut("shift+ctrl+l", …)` in `index.ts`.
+recent first). Delete the file to reset.

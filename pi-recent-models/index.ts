@@ -4,7 +4,7 @@
  * The built-in /model selector sorts by current → default → provider.
  * This extension adds a recency-first selector:
  *
- *   - shift+ctrl+l  open the selector (also /recent-model)
+ *   - /model-recent opens it
  *   - ↑↓ navigate, type to fuzzy-filter, enter to switch, esc to cancel
  *
  * History is recorded from model_select events (set | cycle | restore)
@@ -267,13 +267,8 @@ export default function (pi: ExtensionAPI): void {
     }
   };
 
-  pi.registerCommand("recent-model", {
+  pi.registerCommand("model-recent", {
     description: "Select a model, recently-used first",
     handler: async (_args, ctx) => openSelector(ctx),
-  });
-
-  pi.registerShortcut("shift+ctrl+l", {
-    description: "Open model selector sorted by recent use",
-    handler: async (ctx) => openSelector(ctx as ExtensionCommandContext),
   });
 }
