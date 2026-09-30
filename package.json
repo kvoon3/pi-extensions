@@ -7,7 +7,8 @@
       "./pi-split-fork/index.ts",
       "./pi-windows-system-theme/index.ts",
       "./pi-workbuddy/index.ts",
-      "./pi-recent-models/index.ts"
+      "./pi-recent-models/index.ts",
+      "./pi-voice/index.ts"
     ]
   },
   "scripts": {
