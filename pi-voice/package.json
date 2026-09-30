@@ -1,0 +1,40 @@
+{
+  "name": "@kvoon/pi-voice",
+  "version": "0.1.0",
+  "description": "Voice dictation for Pi with a configurable speech-to-text service",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "voice",
+    "dictation",
+    "transcription",
+    "speech-to-text"
+  ],
+  "author": "Kevin Kwong",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kvoon3/pi-extensions.git",
+    "directory": "pi-voice"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "README.md"
+  ],
+  "dependencies": {
+    "@picovoice/pvrecorder-node": "1.2.9",
+    "typebox": "1.3.34"
+  }
+}

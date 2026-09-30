@@ -55,3 +55,15 @@ pi install npm:@kvoon/pi-workbuddy
 ```
 
 See [setup and behavior](./pi-workbuddy/README.md).
+
+### `pi-voice`
+
+Voice dictation for Pi using a configurable speech-to-text service. Audio is sent to the configured endpoint; credentials and service settings can be supplied in a private file under `~/.pi/agent/` or through environment variables.
+
+```bash
+cd ~/i/pi-extensions/pi-voice
+npm install
+pi install ~/i/pi-extensions/pi-voice
+```
+
+See [setup and usage](./pi-voice/README.md).
