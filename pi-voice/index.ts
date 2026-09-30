@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { PvRecorder } from "@picovoice/pvrecorder-node";
 import { Type } from "typebox";
 import { execFile, spawn } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
+import { chmod, readFile, stat, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { resolve, join } from "node:path";
@@ -16,7 +16,12 @@ const SHORTCUT_LABEL = "Alt+Shift+Z";
 const WIDGET = "pi-voice";
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 const CONFIG_PATH = join(AGENT_DIR, "voice.json");
+const AUTH_PATH = join(AGENT_DIR, "voice-auth.json");
 const LEGACY_CONFIG_PATH = join(AGENT_DIR, "openrouter-voice.json");
+/** Shown by `/voice-settings`; the key itself is never printed. */
+const AUTH_FILE = AUTH_PATH.slice(AGENT_DIR.length + 1);
+const CONFIG_FILE = CONFIG_PATH.slice(AGENT_DIR.length + 1);
+const OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key";
 const execFileAsync = promisify(execFile);
 
 function runAppleScript(script: string): Promise<string> {
@@ -63,40 +68,82 @@ type Recording = {
 };
 
 type VoiceConfig = { apiKey?: unknown; model?: unknown; endpoint?: unknown };
-type VoiceSettings = { apiKey: string; model: string; endpoint: string };
+/** Where the key in use came from. Environment, `/voice-login`, or a legacy `apiKey` in the config. */
+type VoiceKeySource = "PI_VOICE_API_KEY" | "OPENROUTER_API_KEY" | typeof AUTH_FILE | typeof CONFIG_FILE;
+type VoiceSettings = { apiKey: string; model: string; endpoint: string; keySource: VoiceKeySource };
 
 function nonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-async function readVoiceConfig(): Promise<VoiceConfig> {
-  let config: VoiceConfig = {};
-  for (const path of [LEGACY_CONFIG_PATH, CONFIG_PATH]) {
-    try {
-      const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new Error("Settings must contain a JSON object.");
-      }
-      config = { ...config, ...(parsed as VoiceConfig) };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-      throw new Error(`Could not read voice settings from ${path}: ${error instanceof Error ? error.message : String(error)}`);
-    }
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "";
   }
-  return config;
 }
 
+async function readConfigFile(path: string): Promise<VoiceConfig> {
+  try {
+    const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Settings must contain a JSON object.");
+    }
+    return parsed as VoiceConfig;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw new Error(`Could not read voice settings from ${path}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function readVoiceConfig(): Promise<VoiceConfig> {
+  return { ...(await readConfigFile(LEGACY_CONFIG_PATH)), ...(await readConfigFile(CONFIG_PATH)) };
+}
+
+async function currentEndpoint(): Promise<string> {
+  const config = await readVoiceConfig();
+  return nonEmptyString(process.env.PI_VOICE_ENDPOINT) ?? nonEmptyString(config.endpoint) ?? DEFAULT_ENDPOINT;
+}
+
+/** Resolves the key from the environment, `/voice-login`, or a legacy `apiKey` in the config. */
 async function readVoiceSettings(): Promise<VoiceSettings> {
   const config = await readVoiceConfig();
-  const apiKey = nonEmptyString(process.env.PI_VOICE_API_KEY) ??
-    nonEmptyString(process.env.OPENROUTER_API_KEY) ?? nonEmptyString(config.apiKey);
-  if (!apiKey) throw new Error(`Voice API key is missing. Set PI_VOICE_API_KEY or configure ${CONFIG_PATH}.`);
+  const stored = await readConfigFile(AUTH_PATH);
+  let apiKey = nonEmptyString(process.env.PI_VOICE_API_KEY);
+  let keySource: VoiceKeySource = "PI_VOICE_API_KEY";
+  if (!apiKey) {
+    apiKey = nonEmptyString(process.env.OPENROUTER_API_KEY);
+    keySource = "OPENROUTER_API_KEY";
+  }
+  if (!apiKey) {
+    apiKey = nonEmptyString(stored.apiKey);
+    keySource = AUTH_FILE;
+  }
+  if (!apiKey) {
+    apiKey = nonEmptyString(config.apiKey);
+    keySource = CONFIG_FILE;
+  }
+  if (!apiKey) {
+    throw new Error(`Voice API key is missing. Run /voice-login, set PI_VOICE_API_KEY, or add "apiKey" to ${CONFIG_PATH}.`);
+  }
 
   return {
     apiKey,
+    keySource,
     model: nonEmptyString(process.env.PI_VOICE_MODEL) ?? nonEmptyString(config.model) ?? DEFAULT_MODEL,
-    endpoint: nonEmptyString(process.env.PI_VOICE_ENDPOINT) ?? nonEmptyString(config.endpoint) ?? DEFAULT_ENDPOINT,
+    endpoint: await currentEndpoint(),
   };
+}
+
+/** Rejects a key OpenRouter refuses, and reports the remaining credit when the API provides it. */
+async function checkOpenRouterKey(key: string): Promise<{ error?: string; note?: string }> {
+  const response = await fetch(OPENROUTER_KEY_URL, { headers: { Authorization: `Bearer ${key}` } }).catch(() => undefined);
+  if (!response) return {};
+  if (response.status === 401 || response.status === 403) return { error: "OpenRouter rejected that key." };
+  const body = await response.json().catch(() => undefined) as { data?: { limit_remaining?: unknown } } | undefined;
+  const remaining = body?.data?.limit_remaining;
+  return typeof remaining === "number" ? { note: `Remaining credit: $${remaining.toFixed(2)}.` } : {};
 }
 
 function wavFromFrames(frames: readonly Int16Array[]): Buffer {
@@ -344,13 +391,39 @@ export default function piVoice(pi: ExtensionAPI): void {
   const showSettings = async (_args: string, ctx: Parameters<typeof toggle>[0]): Promise<void> => {
     try {
       const settings = await readVoiceSettings();
-      ctx.ui.notify(`Voice transcription: ${settings.model} · shortcut ${SHORTCUT_LABEL}`, "info");
+      const host = hostOf(settings.endpoint);
+      ctx.ui.notify(
+        `Voice: ${settings.model}${host ? ` → ${host}` : ""} · key from ${settings.keySource} · shortcut ${SHORTCUT_LABEL}`,
+        "info",
+      );
     } catch (error) {
       ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
     }
   };
   pi.registerCommand("voice-settings", { description: "Show voice transcription settings", handler: showSettings });
   pi.registerCommand("transcribe", { description: "Show voice transcription settings", handler: showSettings });
+  pi.registerCommand("voice-login", {
+    description: "Save an OpenRouter API key for voice transcription",
+    handler: async (_args, ctx) => {
+      if (!ctx.hasUI) {
+        ctx.ui.notify("Voice login needs an interactive session.", "error");
+        return;
+      }
+      const key = (await ctx.ui.input("OpenRouter API key", "sk-or-v1-…"))?.trim();
+      if (!key) {
+        ctx.ui.notify("Voice login cancelled.", "info");
+        return;
+      }
+      const check = hostOf(await currentEndpoint()) === "openrouter.ai" ? await checkOpenRouterKey(key) : {};
+      if (check.error) {
+        ctx.ui.notify(check.error, "error");
+        return;
+      }
+      await writeFile(AUTH_PATH, `${JSON.stringify({ apiKey: key }, null, 2)}\n`, { mode: 0o600 });
+      await chmod(AUTH_PATH, 0o600);
+      ctx.ui.notify(`Voice key saved to ${AUTH_PATH}.${check.note ? ` ${check.note}` : ""}`, "info");
+    },
+  });
   pi.registerCommand("voice-cancel", {
     description: "Discard the current recording",
     handler: async (_args, ctx) => {
@@ -395,7 +468,7 @@ export default function piVoice(pi: ExtensionAPI): void {
       ], { encoding: "buffer", maxBuffer: 64 * 1024 * 1024, signal });
       const settings = await readVoiceSettings();
       const text = await transcribe(Buffer.from(stdout), settings, signal);
-      return { content: [{ type: "text", text: text || "No speech detected." }] };
+      return { content: [{ type: "text", text: text || "No speech detected." }], details: undefined };
     },
   });
 
