@@ -12,6 +12,8 @@ import { buildSessionContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 import { spawnSync } from "node:child_process";
 import { registerUsageCommand } from "./usage-command.js";
+import { registerGitHubAccountCommand } from "./github-account.js";
+import { readGhHostsText, readOriginRemoteUrl, resolveHostAccounts } from "./github.js";
 import { detectProvider, fetchUsageForProvider, type RateWindow, type UsageSnapshot } from "./usage.js";
 
 // ============ Types ============
@@ -21,6 +23,18 @@ interface GitCache {
   dirty: boolean;
   ahead: number;
   behind: number;
+}
+
+// ============ GitHub Account Cache ============
+
+/** Active gh account for the current repo's host — all the footer needs. */
+let githubAccount: string | null = null;
+
+function refreshGitHubAccount(): boolean {
+  const account = resolveHostAccounts(readGhHostsText(), readOriginRemoteUrl()).active;
+  const changed = account !== githubAccount;
+  githubAccount = account;
+  return changed;
 }
 
 // ============ Usage Cache ============
@@ -40,10 +54,6 @@ function parseBooleanEnv(value: string | undefined, fallback: boolean): boolean 
   if (["0", "false", "no", "off"].includes(normalized)) return false;
   return fallback;
 }
-
-// ============ Identity Cache ============
-
-let codexEmailPrefix: string | null | undefined; // undefined = not yet resolved
 
 // ============ Git Cache ============
 
@@ -113,7 +123,18 @@ function refreshGitCache(): boolean {
 // ============ Extension ============
 
 export default function (pi: ExtensionAPI) {
+  const requestFooterRender = () => tuiRef?.requestRender();
+
   registerUsageCommand(pi);
+
+  // Refreshes the footer badge right away; the next turn_end refresh would
+  // otherwise apply it only after another exchange.
+  registerGitHubAccountCommand(pi, {
+    onSwitched: () => {
+      refreshGitHubAccount();
+      requestFooterRender();
+    },
+  });
 
   const CTX_GAUGE_WIDTH = 12;
 
@@ -124,6 +145,7 @@ export default function (pi: ExtensionAPI) {
   // Optional visibility toggles (default: enabled)
   const showCwd = parseBooleanEnv(process.env.PI_MINIMAL_FOOTER_SHOW_CWD, true);
   const showBranch = parseBooleanEnv(process.env.PI_MINIMAL_FOOTER_SHOW_BRANCH, true);
+  const showGitHub = parseBooleanEnv(process.env.PI_MINIMAL_FOOTER_SHOW_GITHUB, true);
 
   function formatTokenCount(tokens: number): string {
     if (tokens >= 1_000_000) {
@@ -258,6 +280,12 @@ export default function (pi: ExtensionAPI) {
     return wrapFooterSegments(segments, width, sep);
   }
 
+  /** The active `gh` account, e.g. `gh:kvoon3`. */
+  function renderGitHubBadge(theme: any): string {
+    if (!githubAccount) return "";
+    return theme.fg("dim", "gh:") + theme.fg("accent", githubAccount);
+  }
+
   function getThinkingLevel(ctx: any): string {
     const entries = ctx.sessionManager.getEntries();
     const leafId = ctx.sessionManager.getLeafId();
@@ -295,8 +323,10 @@ export default function (pi: ExtensionAPI) {
   // Store tui reference for triggering re-renders from event handlers
   let tuiRef: { requestRender: () => void } | null = null;
 
-  function refreshGitFooter(): void {
-    if (refreshGitCache()) tuiRef?.requestRender();
+  function refreshFooterCaches(): void {
+    const gitChanged = refreshGitCache();
+    const githubChanged = showGitHub ? refreshGitHubAccount() : false;
+    if (gitChanged || githubChanged) requestFooterRender();
   }
 
   /** Fetch usage for the active provider. Shows cached data immediately,
@@ -361,7 +391,7 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on("session_start", async (_event, ctx) => {
-    refreshGitCache();
+    refreshFooterCaches();
 
     if (!ctx.hasUI) return;
 
@@ -369,7 +399,7 @@ export default function (pi: ExtensionAPI) {
       tuiRef = tui;
 
       const unsub = footerData.onBranchChange(() => {
-        refreshGitFooter();
+        refreshFooterCaches();
       });
 
       // Initial fetch inside factory — tui is guaranteed available here,
@@ -430,6 +460,7 @@ export default function (pi: ExtensionAPI) {
 
           const statusBlocks = [
             locationBlock,
+            showGitHub ? renderGitHubBadge(theme) : "",
             fitFooterSegment(width, modelStr === plainModelStr ? [plainModelStr] : [modelStr, plainModelStr]),
             fitFooterSegment(width, [
               renderContextGauge(percentage, theme, ctxUsed, ctxTotal, {
@@ -469,7 +500,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("turn_end", async () => {
-    refreshGitFooter();
+    refreshFooterCaches();
   });
 
   // Refresh when model changes — fetch immediately, restart timer

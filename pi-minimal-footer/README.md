@@ -14,6 +14,8 @@ Forked from `@ogulcancelik/pi-minimal-footer` with more providers support.
 - **OpenRouter support** — remaining pay-as-you-go balance from your OAuth-minted or API key
 - **Auto-refresh** — fetches usage on startup and model switch, then every 5 minutes
 - **Git integration** — branch name, dirty state, ahead/behind counts
+- **GitHub account** — the active `gh` CLI account (`gh:kvoon3`), read from `gh`'s own config so it follows `gh auth switch`; resolved per host, so a GHE remote shows that host's account
+- **`/gh` command + `alt+g` shortcut** — open an account list (active first) and switch the active GitHub account, like the model picker does for models
 
 ## Supported providers
 
@@ -44,6 +46,18 @@ Or via git:
 pi install git:github.com/kvoon/pi-extensions
 ```
 
+The badge only reads `gh`'s config file, so it works without the `gh` binary. Switching accounts with `/gh` needs `gh` on `PATH` (`mise use -g gh@latest`); without it the extension still renders the badge and `/gh` reports that gh is missing.
+
+## Switch GitHub account
+
+```text
+/gh            Open the account list (active first) and switch
+/gh kvoon9     Switch to an account directly (case-insensitive)
+/gh --help     Show usage and the accounts known to gh
+```
+
+The `alt+g` shortcut opens the same list. Accounts come from gh's own config (`hosts.yml`) for the host the current repo targets — the `origin` remote host, otherwise `github.com` — so the list matches `gh auth status`. Switching runs `gh auth switch --hostname <host> --user <user>`; it does not log in and does not touch tokens. The active account is what gh's git credential helper hands to `git push`, and the footer badge updates as soon as the switch succeeds. Picking the already-active account, cancelling the list, or an unknown account never runs `gh`. Failures (gh missing, not logged in) surface as one error notification. Like `/usage`, the command appends nothing to the session or model context.
+
 ## Usage command
 
 ```text
@@ -69,6 +83,7 @@ Environment variables (all optional):
 | ------------------------------- | -------------------------------------------------------- | ------- |
 | `PI_MINIMAL_FOOTER_SHOW_CWD`    | Show current working directory in footer status line     | `1`     |
 | `PI_MINIMAL_FOOTER_SHOW_BRANCH` | Show git branch/dirty/ahead/behind in footer status line | `1`     |
+| `PI_MINIMAL_FOOTER_SHOW_GITHUB` | Show active GitHub account (`gh:<user>`) in footer status line | `1`     |
 
 Accepted false values: `0`, `false`, `no`, `off` (case-insensitive).
 
@@ -90,7 +105,7 @@ Git state is refreshed:
 - When pi reports a branch change
 - At the end of each turn
 
-The footer adapts to narrow terminals by stacking lines vertically instead of the single-line wide layout.
+The GitHub account is refreshed on the same schedule, plus immediately after `/gh` switches accounts. It reads the active account for the remote's host from `gh`'s `hosts.yml` (`$GH_CONFIG_DIR`, `~/.config/gh`, or `%APPDATA%\GitHub CLI` on Windows) and the `origin` remote URL — no `gh` call and no network request. Switching accounts with `gh auth switch` outside the extension shows up in the footer at the end of the next turn. Narrow terminals stack lines vertically instead of using the single-line wide layout.
 
 ## Known issues
 
