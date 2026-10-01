@@ -98,6 +98,7 @@ function formatMoney(result: Result): string {
     const { used, remaining, limit } = window.money!;
     if (result.id === "commandcode" && limit !== undefined) return `$${used.toFixed(2)} / $${limit.toFixed(2)}`;
     if (remaining !== undefined) return `$${remaining.toFixed(2)} left`;
+    if (limit !== undefined) return `$${used.toFixed(2)} / $${limit.toFixed(2)}`;
     return `$${used.toFixed(2)} / 30d`;
   }).join(" · ") || "—";
 }

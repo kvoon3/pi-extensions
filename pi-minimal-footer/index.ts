@@ -4,7 +4,7 @@
  * Custom footer with context gauge + subscription usage bars.
  * Auto-detects provider from current model and shows relevant usage.
  *
- * Supports: Claude Max, Codex, Copilot, Gemini, MiniMax Token Plan, Kimi Coding, GLM Coding Plan CN (zai-coding-cn), CommandCode, OpenCode Go, OpenCode Zen, OpenRouter
+ * Supports: Claude Max, Codex, Copilot, Gemini, MiniMax Token Plan, Kimi Coding, GLM Coding Plan CN (zai-coding-cn), CommandCode, OpenCode Go, OpenCode Zen, OpenRouter, xAI (Grok subscription)
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";

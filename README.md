@@ -14,7 +14,7 @@ pi install npm:@kvoon/pi-split-fork
 
 ### `pi-minimal-footer`
 
-Minimal footer with context gauge, model info, and subscription usage bars. Supports Claude Max, Codex, Copilot, Gemini, MiniMax, Kimi Coding, CommandCode, WorkBuddy, OpenRouter.
+Minimal footer with context gauge, model info, and subscription usage bars. Supports Claude Max, Codex, Copilot, Gemini, MiniMax, Kimi Coding, CommandCode, WorkBuddy, OpenRouter, xAI (Grok).
 
 ```bash
 pi install npm:@kvoon/pi-minimal-footer

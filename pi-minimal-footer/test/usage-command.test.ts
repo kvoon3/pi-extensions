@@ -256,6 +256,108 @@ test('WorkBuddy shows the healthy account ratio when a query fails', () => {
   assert.match(result.notifications[0].message, /\$300 \/ \$500 · 2\/3 accounts/);
 });
 
+// ---- xAI (Grok 订阅) ----
+// 契约：GET /v1/user 拿 userId → GET /v1/billing?format=credits 带 x-userid 头。
+// credential 只认 /login xai 存的 OAuth access；api-key 条目按未配置处理。
+const xaiAuth = (access = 'test-xai-oauth') => ({ xai: { type: 'oauth', access, refresh: 'r', expires: Date.now() + 3600_000 } });
+const XAI_USER = 'https://cli-chat-proxy.grok.com/v1/user?include=subscription';
+const XAI_BILLING = 'https://cli-chat-proxy.grok.com/v1/billing?format=credits';
+
+function xaiRun(args: string, options: RunOptions & { access?: string | null } = {}): RunResult {
+  const { access = 'test-xai-oauth', ...rest } = options;
+  return run(args, { auth: access ? xaiAuth(access) : {}, ...rest });
+}
+
+const creditBilling = {
+  subscriptionTier: 'SuperGrok',
+  config: {
+    creditUsagePercent: 37.4,
+    currentPeriod: {
+      type: 'USAGE_PERIOD_TYPE_WEEKLY',
+      start: new Date(Date.now() - 3 * 86400000).toISOString(),
+      end: new Date(Date.now() + 4 * 86400000).toISOString(),
+    },
+    isUnifiedBillingUser: false,
+    onDemandUsed: { val: 0 },
+    onDemandCap: { val: 0 },
+    prepaidBalance: { val: 0 },
+  },
+};
+
+test('xAI OAuth shows the weekly allowance bar from the user+billing pair', () => {
+  const result = xaiRun('xai', {
+    responses: {
+      [XAI_USER]: { body: { userId: 'user-1', subscriptionTier: 'SuperGrok' } },
+      [XAI_BILLING]: { body: creditBilling },
+    },
+  });
+  assert.equal(result.requests, 2);
+  assert.deepStrictEqual(result.requestAuth, ['Bearer test-xai-oauth', 'Bearer test-xai-oauth']);
+  const message = result.notifications[0].message;
+  assert.match(message, /xAI/);
+  assert.match(message, /Week Reset/);
+  assert.match(message, /37\.4%/);
+});
+
+// 老 credits 形态：无 creditUsagePercent，用 used/monthlyLimit 美分相除；
+// 余额列显示 剩余额度；按需与预付只在有数据时出现。
+test('xAI legacy credits derive percent from used/limit and show balances', () => {
+  const result = xaiRun('xai', {
+    responses: {
+      [XAI_USER]: { body: { userId: 'user-1' } },
+      [XAI_BILLING]: { body: {
+        config: {
+          used: { val: 250 },
+          monthlyLimit: { val: 1000 },
+          billingPeriodEnd: new Date(Date.now() + 86400000).toISOString(),
+          onDemandUsed: { val: 120 },
+          onDemandCap: { val: 500 },
+          prepaidBalance: { val: 300 },
+        },
+      } },
+    },
+  });
+  const message = result.notifications[0].message;
+  assert.match(message, /Month Reset/);
+  assert.match(message, /25%/);
+  assert.match(message, /\$7\.50 left/);
+  assert.match(message, /\$1\.20 \/ \$5\.00/);
+  assert.match(message, /\$3\.00 left/);
+});
+
+// 统计费账户把用量字段全部清零：仍显示周期窗口（重置时间），百分比按 0。
+test('xAI unified-billing zero state still shows the period window', () => {
+  const result = xaiRun('xai', {
+    responses: {
+      [XAI_USER]: { body: { userId: 'user-1' } },
+      [XAI_BILLING]: { body: {
+        config: {
+          currentPeriod: { type: 'USAGE_PERIOD_TYPE_WEEKLY', start: new Date().toISOString(), end: new Date(Date.now() + 86400000).toISOString() },
+          onDemandCap: { val: 0 },
+          onDemandUsed: { val: 0 },
+          isUnifiedBillingUser: true,
+          prepaidBalance: { val: 0 },
+        },
+      } },
+    },
+  });
+  const message = result.notifications[0].message;
+  assert.match(message, /xAI/);
+  assert.match(message, /Week Reset/);
+  assert.match(message, /\s0%/);
+});
+
+// api-key 条目没有消费者计费：完全不发请求，按未配置展示。
+test('xAI API-key entries read as not configured', () => {
+  const result = run('xai', {
+    auth: { xai: { type: 'api', key: 'xai-test-key' } },
+    responses: { [XAI_USER]: { body: { userId: 'user-1' } } },
+  });
+  assert.equal(result.requests, 0);
+  assert.match(result.notifications[0].message, /Not configured/);
+  assert.notMatch(result.notifications[0].message, /xai-test-key/);
+});
+
 test('narrow tables keep a single row per provider', () => {
   const result = run('', { auth, responses, columns: 60 });
   const rows = result.notifications[0].message.split('\n').filter((line) => line.includes('│'));

@@ -142,6 +142,15 @@ function getKimiToken(): string | undefined {
   return getApiKey("kimi-coding", "KIMI_API_KEY");
 }
 
+function getXaiToken(): string | undefined {
+  // /login xai stores a SuperGrok / X Premium OAuth credential. Plain API keys
+  // have no consumer billing behind the usage endpoints, so only the OAuth
+  // access token qualifies — an api-key entry must read as no-auth.
+  const entry = loadAuthJson().xai;
+  if (!entry || typeof entry !== "object") return undefined;
+  return resolveAuthValue(entry.access);
+}
+
 // ============ Time Formatting ============
 
 function formatResetTime(date: Date): string {
@@ -785,6 +794,134 @@ async function fetchOpenRouterUsage(): Promise<UsageSnapshot> {
   }
 }
 
+// ---- xAI Grok 订阅（SuperGrok / X Premium OAuth）----
+// 非官方消费者计费面，与 Grok Build CLI 同一套：先查身份拿 userId，
+// 再带 x-userid 头查余额。credential 来自 pi 的 /login xai。
+
+const XAI_USER_URL = "https://cli-chat-proxy.grok.com/v1/user?include=subscription";
+const XAI_BILLING_URL = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
+/** Grok Build 的 x-grok-client-version，钉住本契约时的观测值；过期只降级不炸。 */
+const XAI_CLIENT_VERSION = "1.0.10";
+
+/** 金额以 {val: 美分} 包装返回；非安全整数或负数一律忽略。 */
+function xaiCents(value: any): number | undefined {
+  const cents = value?.val;
+  if (typeof cents !== "number" || !Number.isSafeInteger(cents) || cents < 0) return undefined;
+  return cents / 100;
+}
+
+function xaiTimestamp(value: any): Date | undefined {
+  if (typeof value !== "string") return undefined;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? new Date(ms) : undefined;
+}
+
+async function fetchXaiUsage(): Promise<UsageSnapshot> {
+  const token = getXaiToken();
+  const providerLabel = "xAI";
+  if (!token) {
+    return { provider: providerLabel, windows: [], error: "no-auth", fetchedAt: Date.now() };
+  }
+
+  const headers = (extra: Record<string, string> = {}): Record<string, string> => ({
+    Authorization: `Bearer ${token}`,
+    "X-XAI-Token-Auth": "xai-grok-cli",
+    "x-grok-client-version": XAI_CLIENT_VERSION,
+    "x-grok-client-mode": "interactive",
+    Accept: "application/json",
+    ...extra,
+  });
+
+  try {
+    const userRes = await fetchWithTimeout(XAI_USER_URL, { headers: headers() });
+    if (!userRes.ok) {
+      return { provider: providerLabel, windows: [], error: `HTTP ${userRes.status}`, fetchedAt: Date.now() };
+    }
+    const user = (await userRes.json()) as any;
+    const userId = typeof user?.userId === "string" ? user.userId : "";
+    if (!userId) {
+      return { provider: providerLabel, windows: [], error: "no-usage-data", fetchedAt: Date.now() };
+    }
+
+    const billRes = await fetchWithTimeout(XAI_BILLING_URL, { headers: headers({ "x-userid": userId }) });
+    if (!billRes.ok) {
+      return { provider: providerLabel, windows: [], error: `HTTP ${billRes.status}`, fetchedAt: Date.now() };
+    }
+
+    const data = (await billRes.json()) as any;
+    const config = data?.config ?? {};
+    const period = config.currentPeriod ?? {};
+    const periodType = typeof period.type === "string" ? period.type : "";
+
+    // 套餐额度：creditUsagePercent 是实时字段；老式 credits 账户退回
+    // used/monthlyLimit 美分相除。统一计费账户两者都清零（未用量化），
+    // 此时仍给出周期窗口展示重置时间，百分比按 0 处理。
+    const usedCents = xaiCents(config.used);
+    const limitCents = xaiCents(config.monthlyLimit);
+    let usedPercent: number | undefined;
+    if (config.creditUsagePercent != null && Number.isFinite(Number(config.creditUsagePercent))) {
+      usedPercent = clampPercent(Number(config.creditUsagePercent));
+    } else if (usedCents !== undefined && limitCents !== undefined && limitCents > 0) {
+      usedPercent = clampPercent((usedCents / limitCents) * 100);
+    }
+
+    const resetDate = xaiTimestamp(period.end) ?? xaiTimestamp(config.billingPeriodEnd);
+    const windows: RateWindow[] = [];
+
+    // 周期窗口不带 money：/usage 表格按"有钱=纯余额"分列，混合会丢配额 bar。
+    if (usedPercent !== undefined || resetDate) {
+      let label = "Usage";
+      if (periodType.endsWith("WEEKLY")) label = "Week";
+      else if (periodType.endsWith("MONTHLY")) label = "Month";
+      else if (!periodType && usedCents !== undefined) label = "Month"; // credits 形态无周期类型时按月度回退（pi-xai-usage 约定）
+      windows.push({
+        label,
+        usedPercent: usedPercent ?? 0,
+        resetsIn: resetDate ? formatResetTime(resetDate) : undefined,
+      });
+    }
+
+    // 老式 credits 账户才有美分余额：单独一条余额行（与 OpenRouter 同款）。
+    if (usedCents !== undefined && limitCents !== undefined && limitCents > 0) {
+      const remaining = limitCents - usedCents;
+      windows.push({
+        label: `$${remaining.toFixed(2)} left`,
+        usedPercent: 0,
+        money: { currency: "USD", used: usedCents, remaining, limit: limitCents },
+      });
+    }
+
+    // 套餐外按需用量（统一计费，有上限才值得展示）。
+    const onDemandUsed = xaiCents(config.onDemandUsed);
+    const onDemandCap = xaiCents(config.onDemandCap);
+    if (onDemandUsed !== undefined && onDemandCap !== undefined && onDemandCap > 0) {
+      windows.push({
+        label: `$${onDemandUsed.toFixed(2)}/$${onDemandCap.toFixed(0)}`,
+        usedPercent: clampPercent((onDemandUsed / onDemandCap) * 100),
+        money: { currency: "USD", used: onDemandUsed, limit: onDemandCap },
+      });
+    }
+
+    // 预付余额：纯余额，不是滚动窗口（与 OpenRouter 同款展示）。
+    const prepaid = xaiCents(config.prepaidBalance);
+    if (prepaid !== undefined && prepaid > 0) {
+      windows.push({
+        label: `$${prepaid.toFixed(2)} prepaid`,
+        usedPercent: 0,
+        money: { currency: "USD", used: 0, remaining: prepaid },
+      });
+    }
+
+    if (windows.length === 0) {
+      return { provider: providerLabel, windows: [], error: "no-usage-data", fetchedAt: Date.now() };
+    }
+
+    return { provider: providerLabel, windows, fetchedAt: Date.now() };
+  } catch (e) {
+    return { provider: providerLabel, windows: [], error: String(e), fetchedAt: Date.now() };
+  }
+}
+
 // ============ Provider Cost Accounting (OpenCode Zen / Go) ============
 // Neither OpenCode Zen nor Go exposes usage/balance over their API keys
 // (the console dashboard is OAuth-only; the chat API returns no quota
@@ -989,6 +1126,7 @@ export const PROVIDER_MAP: Record<string, string> = {
   opencode: "opencode-zen", // OpenCode Zen pay-per-use
   "opencode-go": "opencode-go", // OpenCode Go subscription
   openrouter: "openrouter", // OpenRouter credits
+  xai: "xai", // Grok 订阅（SuperGrok / X Premium OAuth）
 };
 
 export function detectProvider(modelProvider: string): string | null {
@@ -1021,6 +1159,8 @@ export async function fetchUsageForProvider(provider: string): Promise<UsageSnap
       return fetchOpenCodeZenUsage();
     case "openrouter":
       return fetchOpenRouterUsage();
+    case "xai":
+      return fetchXaiUsage();
     default:
       return { provider: "Unknown", windows: [], error: "unknown-provider", fetchedAt: Date.now() };
   }

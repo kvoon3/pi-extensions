@@ -33,6 +33,7 @@ Forked from `@ogulcancelik/pi-minimal-footer` with more providers support.
 | OpenCode Zen   | Pay-per-use spend, last 30 days (local cost accounting) |
 | WorkBuddy      | Gateway pool credits (remain/size + healthy accounts)  |
 | OpenRouter     | Remaining credit balance ($X.XX left)                  |
+| xAI (Grok)     | Weekly/monthly allowance + on-demand + prepaid balance |
 
 ## Install
 
@@ -74,6 +75,8 @@ Each provider occupies one table row, with each quota window in a separate align
 OpenCode Go and Zen have no usage API, so their numbers are local estimates: they count only pi session costs, not account-wide usage. Zen covers the last 30 days. Go uses the footer's $12/5h and $30/calendar-week limits. Expired credentials must be renewed through the corresponding client; `/usage` does not log in or refresh tokens.
 
 WorkBuddy credits come from the gateway's `GET /v1/usage`. The key is read from `~/.pi/agent/auth.json` — the same credential `/login` stores — so there is no second place to configure, and the endpoint defaults to the LAN gateway (`WORKBUDDY_BASE_URL` overrides it, `WORKBUDDY_API_KEY` supplies the key without `/login`). Without a stored key the row is omitted rather than reporting 401s. Credits render with a `$` prefix (`$1090 / $1100` in the Balance column, a plain `$1090/$1100` segment in the footer; no bar, no reset — it is a balance, not a rolling window). A multi-account pool shows `· 2/3 accounts` when some accounts fail to report. Requires [pi-workbuddy](../pi-workbuddy) for the model catalog.
+
+xAI (Grok) usage comes from the same unofficial consumer-billing endpoints Grok Build uses (`cli-chat-proxy.grok.com`): identity first, then billing with the account id in the `x-userid` header. The credential is the SuperGrok / X Premium OAuth token stored by `/login xai` — plain API keys have no consumer billing, so those accounts stay hidden (Not configured) rather than erroring. The main window is the included allowance for the current weekly or monthly period (live `creditUsagePercent`, falling back to used/limit credits); unified-billing accounts that report no percentage still show the period bar with its reset time. On-demand overage and prepaid credits appear when the account has them.
 
 ## Configuration
 
