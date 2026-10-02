@@ -9,14 +9,25 @@ Fork the current Pi session into a new Pi agent in a Herdr pane, tab, or workspa
 
 ## Install
 
+**npm**
+
 ```bash
 pi install npm:@kvoon/pi-split-fork
 ```
 
-Or from this repository:
+**GitHub**
 
 ```bash
-pi install ./pi-split-fork
+pi install git:github.com/kvoon3/pi-extensions
+```
+
+A git source points at the repository, not a subdirectory, so the git install adds every extension this monorepo ships. Select this one with `pi config`, or narrow the entry in `~/.pi/agent/settings.json`:
+
+```json
+{
+  "source": "git:github.com/kvoon3/pi-extensions",
+  "extensions": ["pi-split-fork/index.ts"]
+}
 ```
 
 ## Usage

@@ -2,18 +2,35 @@
 
 Sends a notification through Herdr or kitty when Pi finishes a response, using the last assistant reply as a plain-text preview (up to 200 Unicode code points). Empty replies show “Ready for input”. Failed and aborted responses are skipped, including failures that Pi will retry. Final failures also do not trigger notifications.
 
-## Try locally
+## Install
 
-From this repository, run Pi in Herdr or kitty:
+**npm**
+
+```bash
+pi install npm:@kvoon/pi-kitty-notify
+```
+
+**GitHub**
+
+```bash
+pi install git:github.com/kvoon3/pi-extensions
+```
+
+A git source points at the repository, not a subdirectory, so the git install adds every extension this monorepo ships. Select this one with `pi config`, or narrow the entry in `~/.pi/agent/settings.json`:
+
+```json
+{
+  "source": "git:github.com/kvoon3/pi-extensions",
+  "extensions": ["pi-kitty-notify/index.ts"]
+}
+```
+
+## Local development
+
+Run Pi with the extension straight from a checkout:
 
 ```bash
 pi -e ./pi-kitty-notify/index.ts
-```
-
-Or install the local package:
-
-```bash
-pi install /absolute/path/to/pi-extensions/pi-kitty-notify
 ```
 
 ## Behavior

@@ -21,14 +21,25 @@ under `── other ──`. The current model is marked with `✓`.
 
 ## Install
 
+**npm**
+
 ```bash
-pi install git:github.com/kvoon3/pi-extensions # and add pi-recent-models/index.ts to extensions
+pi install npm:@kvoon/pi-recent-models
 ```
 
-Or from this repository:
+**GitHub**
 
 ```bash
-pi install ./pi-recent-models
+pi install git:github.com/kvoon3/pi-extensions
+```
+
+A git source points at the repository, not a subdirectory, so the git install adds every extension this monorepo ships. Select this one with `pi config`, or narrow the entry in `~/.pi/agent/settings.json`:
+
+```json
+{
+  "source": "git:github.com/kvoon3/pi-extensions",
+  "extensions": ["pi-recent-models/index.ts"]
+}
 ```
 
 ## Settings

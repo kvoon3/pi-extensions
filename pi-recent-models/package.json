@@ -1,7 +1,7 @@
 {
   "name": "@kvoon/pi-recent-models",
   "version": "0.1.0",
-  "description": "Recency-first model selector for Pi: shift+ctrl+l or /recent-model, recently-used models first",
+  "description": "Recency-first model selector for Pi: ctrl+l or /model-recent, recently-used models first",
   "type": "module",
   "keywords": [
     "pi-package",
@@ -16,6 +16,9 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "pi": {
     "extensions": [

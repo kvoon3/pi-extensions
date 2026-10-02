@@ -37,14 +37,25 @@ Forked from `@ogulcancelik/pi-minimal-footer` with more providers support.
 
 ## Install
 
+**npm**
+
 ```bash
 pi install npm:@kvoon/pi-minimal-footer
 ```
 
-Or via git:
+**GitHub**
 
 ```bash
-pi install git:github.com/kvoon/pi-extensions
+pi install git:github.com/kvoon3/pi-extensions
+```
+
+A git source points at the repository, not a subdirectory, so the git install adds every extension this monorepo ships. Select this one with `pi config`, or narrow the entry in `~/.pi/agent/settings.json`:
+
+```json
+{
+  "source": "git:github.com/kvoon3/pi-extensions",
+  "extensions": ["pi-minimal-footer/index.ts"]
+}
 ```
 
 The badge only reads `gh`'s config file, so it works without the `gh` binary. Switching accounts with `/gh` needs `gh` on `PATH` (`mise use -g gh@latest`); without it the extension still renders the badge and `/gh` reports that gh is missing.

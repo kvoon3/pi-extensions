@@ -14,8 +14,25 @@ Each line the watcher prints is the new mode (`"light"` / `"dark"`), the first b
 
 ## Install
 
+**npm**
+
 ```bash
 pi install npm:@kvoon/pi-windows-system-theme
+```
+
+**GitHub**
+
+```bash
+pi install git:github.com/kvoon3/pi-extensions
+```
+
+A git source points at the repository, not a subdirectory, so the git install adds every extension this monorepo ships. Select this one with `pi config`, or narrow the entry in `~/.pi/agent/settings.json`:
+
+```json
+{
+  "source": "git:github.com/kvoon3/pi-extensions",
+  "extensions": ["pi-windows-system-theme/index.ts"]
+}
 ```
 
 Requires PowerShell 7+ (`pwsh`) on `PATH`.

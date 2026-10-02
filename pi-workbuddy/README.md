@@ -73,11 +73,19 @@ Balance display lives in [`@kvoon/pi-minimal-footer`](../pi-minimal-footer), whi
 
 ## Install
 
+**npm**
+
 ```bash
 pi install npm:@kvoon/pi-workbuddy
 ```
 
-Or via git (this repo):
+**GitHub**
+
+```bash
+pi install git:github.com/kvoon3/pi-extensions
+```
+
+A git source points at the repository, not a subdirectory, so the git install adds every extension this monorepo ships. Select this one with `pi config`, or narrow the entry in `~/.pi/agent/settings.json`:
 
 ```json
 {
