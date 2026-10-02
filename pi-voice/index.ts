@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { PvRecorder } from "@picovoice/pvrecorder-node";
 import { Type } from "typebox";
 import { execFile, spawn } from "node:child_process";
-import { chmod, readFile, stat, writeFile } from "node:fs/promises";
+import { appendFile, chmod, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { resolve, join } from "node:path";
@@ -22,11 +22,32 @@ const LEGACY_CONFIG_PATH = join(AGENT_DIR, "openrouter-voice.json");
 const AUTH_FILE = AUTH_PATH.slice(AGENT_DIR.length + 1);
 const CONFIG_FILE = CONFIG_PATH.slice(AGENT_DIR.length + 1);
 const OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key";
+const SCRIPT_TIMEOUT_MS = 5_000;
+const RESTORE_ATTEMPTS = 4;
+const RESTORE_RETRY_DELAY_MS = 250;
+/** Remembers which Pi process muted system output, so a crashed session's mute can be detected and lifted. */
+const MUTE_MARKER_PATH = join(AGENT_DIR, "voice-mute.json");
+/** Temporary diagnostic trail for the mute/restore lifecycle; remove once the restore issue is solved. */
+const DEBUG_LOG_PATH = join(AGENT_DIR, "voice-debug.log");
+
+function voiceLog(message: string): void {
+  void (async () => {
+    try {
+      const line = `${new Date().toISOString()} pid=${process.pid} ${message}\n`;
+      const logStat = await stat(DEBUG_LOG_PATH).catch(() => undefined);
+      if ((logStat?.size ?? 0) > 262_144) await writeFile(DEBUG_LOG_PATH, line);
+      else await appendFile(DEBUG_LOG_PATH, line);
+    } catch {
+      // Diagnostics must never break the audio paths.
+    }
+  })();
+}
 const execFileAsync = promisify(execFile);
 
 function runAppleScript(script: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn("osascript", ["-e", script], { stdio: ["pipe", "pipe", "pipe"] });
+    const startedAt = Date.now();
     child.stdin?.end();
     let stdout = "";
     let stderr = "";
@@ -34,7 +55,7 @@ function runAppleScript(script: string): Promise<string> {
     const timeout = setTimeout(() => {
       timedOut = true;
       child.kill("SIGKILL");
-    }, 3_000);
+    }, SCRIPT_TIMEOUT_MS);
 
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
     child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
@@ -44,16 +65,23 @@ function runAppleScript(script: string): Promise<string> {
     });
     child.once("close", (code) => {
       clearTimeout(timeout);
+      const ms = Date.now() - startedAt;
       if (timedOut) {
+        voiceLog(`osascript TIMEOUT (${ms}ms): ${script}`);
         reject(new Error("AppleScript timed out."));
       } else if (code !== 0) {
-        reject(new Error(stderr.trim() || `AppleScript exited with status ${code}.`));
+        const detail = stderr.trim() || `AppleScript exited with status ${code}.`;
+        voiceLog(`osascript FAIL (${ms}ms): ${script} -> ${detail}`);
+        reject(new Error(detail));
       } else {
+        voiceLog(`osascript ok (${ms}ms): ${script} -> ${stdout.trim() || "(empty)"}`);
         resolve(stdout);
       }
     });
   });
 }
+
+type VoiceContext = Parameters<Parameters<ExtensionAPI["registerShortcut"]>[1]["handler"]>[0];
 
 type Recording = {
   recorder: PvRecorder;
@@ -173,6 +201,36 @@ function wavFromFrames(frames: readonly Int16Array[]): Buffer {
   return wav;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+async function writeMuteMarker(): Promise<void> {
+  await writeFile(MUTE_MARKER_PATH, `${JSON.stringify({ pid: process.pid })}\n`).catch(() => undefined);
+}
+
+async function clearMuteMarker(): Promise<void> {
+  await rm(MUTE_MARKER_PATH, { force: true }).catch(() => undefined);
+}
+
+async function readMuteMarkerPid(): Promise<number | undefined> {
+  try {
+    const parsed = JSON.parse(await readFile(MUTE_MARKER_PATH, "utf8")) as { pid?: unknown };
+    return typeof parsed.pid === "number" && Number.isInteger(parsed.pid) ? parsed.pid : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function isSystemOutputMuted(): Promise<boolean> {
   const stdout = await runAppleScript("output muted of (get volume settings)");
   return stdout.trim().toLowerCase() === "true";
@@ -185,34 +243,90 @@ async function setSystemOutputMuted(muted: boolean): Promise<void> {
 type SystemMuteResult = { mutedByUs: boolean; failed: boolean };
 
 async function muteSystemOutput(): Promise<SystemMuteResult> {
+  const t0 = Date.now();
   if (process.platform !== "darwin") return { mutedByUs: false, failed: false };
 
-  let wasMuted: boolean;
+  let failed = false;
+  let wasMuted = false;
   try {
     wasMuted = await isSystemOutputMuted();
   } catch {
-    return { mutedByUs: false, failed: true };
+    failed = true;
   }
-  if (wasMuted) return { mutedByUs: false, failed: false };
+
+  const markerPid = await readMuteMarkerPid();
+  voiceLog(`mute: begin wasMuted=${wasMuted} marker=${markerPid ?? "none"}`);
+  if (markerPid !== undefined) {
+    await clearMuteMarker();
+    if (markerPid === process.pid) {
+      // Our own previous recording failed to restore audio, so the current mute is ours: keep ownership.
+      voiceLog(`mute: own leftover marker -> claim ownership without muting (${Date.now() - t0}ms)`);
+      return { mutedByUs: true, failed };
+    }
+    if (!pidAlive(markerPid)) {
+      // A previous Pi session died before restoring audio it muted; lift it before recording.
+      if (wasMuted) {
+        try {
+          await setSystemOutputMuted(false);
+          wasMuted = false;
+          voiceLog("mute: lifted crashed-session leftover mute");
+        } catch {
+          failed = true;
+        }
+      }
+    }
+  }
+
+  if (wasMuted) {
+    voiceLog(`mute: was already muted by user -> no ownership (${Date.now() - t0}ms)`);
+    return { mutedByUs: false, failed };
+  }
 
   try {
     await setSystemOutputMuted(true);
-    return { mutedByUs: true, failed: false };
+    await writeMuteMarker();
+    voiceLog(`mute: muted + marker written (${Date.now() - t0}ms)`);
+    return { mutedByUs: true, failed };
   } catch {
     const mutedByUs = await isSystemOutputMuted().catch(() => false);
+    if (mutedByUs) await writeMuteMarker();
+    voiceLog(`mute: set-true threw; verify says muted=${mutedByUs} (${Date.now() - t0}ms)`);
     return { mutedByUs, failed: true };
   }
 }
 
-async function restoreSystemOutput(mutedByUs: boolean): Promise<void> {
-  if (process.platform !== "darwin" || !mutedByUs) return;
-  try {
-    if (await isSystemOutputMuted()) await setSystemOutputMuted(false);
-  } catch {
-    // Do not prevent recording cleanup if system audio state cannot be restored.
+/** Unmutes system audio, verifying and retrying; returns false if audio is still muted afterwards. */
+async function restoreSystemOutput(mutedByUs: boolean): Promise<boolean> {
+  const t0 = Date.now();
+  if (process.platform !== "darwin" || !mutedByUs) {
+    voiceLog(`restore: skip (platform darwin=${process.platform === "darwin"}, mutedByUs=${mutedByUs})`);
+    return true;
   }
+  voiceLog("restore: begin");
+  for (let attempt = 1; attempt <= RESTORE_ATTEMPTS; attempt += 1) {
+    try {
+      const stateBefore = await isSystemOutputMuted();
+      if (!stateBefore) {
+        await clearMuteMarker();
+        voiceLog(`restore: already unmuted -> ok (${Date.now() - t0}ms)`);
+        return true;
+      }
+      await setSystemOutputMuted(false);
+      const stateAfter = await isSystemOutputMuted();
+      if (!stateAfter) {
+        await clearMuteMarker();
+        voiceLog(`restore: unmuted + verified (attempt ${attempt}, ${Date.now() - t0}ms)`);
+        return true;
+      }
+      voiceLog(`restore: set-false did not stick (attempt ${attempt})`);
+    } catch (error) {
+      voiceLog(`restore: attempt ${attempt} threw: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (attempt < RESTORE_ATTEMPTS) await sleep(RESTORE_RETRY_DELAY_MS);
+  }
+  voiceLog(`restore: ALL ATTEMPTS FAILED, still muted (${Date.now() - t0}ms)`);
+  return false;
 }
-
 async function transcribe(
   wav: Buffer,
   settings: Pick<VoiceSettings, "apiKey" | "model" | "endpoint">,
@@ -279,17 +393,19 @@ function startRecording(settings: VoiceSettings, systemOutputMutedByUs: boolean)
   }
 }
 
-async function stopRecording(recording: Recording): Promise<void> {
+async function stopRecording(recording: Recording, ctx?: VoiceContext): Promise<void> {
   recording.stopping = true;
+  voiceLog(`stop: entry frames=${recording.frames.length} mutedByUs=${recording.systemOutputMutedByUs}`);
+  // Restore audio before awaiting mic teardown so a slow or hung cleanup cannot leave macOS muted.
+  if (!(await restoreSystemOutput(recording.systemOutputMutedByUs))) {
+    voiceLog("stop: restore FAILED -> notifying user");
+    ctx?.ui.notify("Could not unmute macOS output after recording; please unmute it manually.", "warning");
+  }
   try {
-    try {
-      if (recording.recorder.isRecording) recording.recorder.stop();
-    } finally {
-      await recording.readLoop;
-      recording.recorder.release();
-    }
+    if (recording.recorder.isRecording) recording.recorder.stop();
   } finally {
-    await restoreSystemOutput(recording.systemOutputMutedByUs);
+    await recording.readLoop;
+    recording.recorder.release();
   }
   if (recording.error) throw recording.error;
 }
@@ -307,6 +423,7 @@ export default function piVoice(pi: ExtensionAPI): void {
   async function beginRecording(ctx: Parameters<Parameters<ExtensionAPI["registerShortcut"]>[1]["handler"]>[0]): Promise<void> {
     const settings = await readVoiceSettings();
     if (shuttingDown) return;
+    voiceLog("begin: recording requested");
     const { mutedByUs, failed } = await muteSystemOutput();
     if (shuttingDown) {
       await restoreSystemOutput(mutedByUs);
@@ -320,6 +437,7 @@ export default function piVoice(pi: ExtensionAPI): void {
     }
     ctx.ui.setWidget(WIDGET, [`Recording · ${SHORTCUT_LABEL} to transcribe`]);
     if (failed) ctx.ui.notify("Could not mute macOS output; system audio may be audible during recording.", "warning");
+    voiceLog("begin: recorder started");
   }
 
   async function toggle(ctx: Parameters<Parameters<ExtensionAPI["registerShortcut"]>[1]["handler"]>[0]): Promise<void> {
@@ -334,7 +452,7 @@ export default function piVoice(pi: ExtensionAPI): void {
       const current = recording;
       recording = undefined;
       clearWidget(ctx);
-      await stopRecording(current);
+      await stopRecording(current, ctx);
       if (current.frames.length === 0) {
         ctx.ui.notify("No audio was captured.", "warning");
         return;
@@ -440,7 +558,7 @@ export default function piVoice(pi: ExtensionAPI): void {
       operation = true;
       try {
         clearWidget(ctx);
-        await stopRecording(current).catch(() => undefined);
+        await stopRecording(current, ctx).catch(() => undefined);
         ctx.ui.notify("Recording discarded.", "info");
       } finally {
         operation = false;
@@ -476,7 +594,7 @@ export default function piVoice(pi: ExtensionAPI): void {
     shuttingDown = true;
     requestController?.abort(new Error("Pi is shutting down"));
     if (recording) {
-      await stopRecording(recording).catch(() => undefined);
+      await stopRecording(recording, ctx).catch(() => undefined);
       recording = undefined;
     }
     clearWidget(ctx);
