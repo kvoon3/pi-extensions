@@ -1,10 +1,9 @@
 {
   "name": "@kvoon/pi-workbuddy",
   "version": "0.4.2",
-  "description": "WorkBuddy provider for Pi: live model catalog + credits from a local workbuddy2api gateway",
+  "description": "DEPRECATED: WorkBuddy provider for Pi \u2014 no longer loaded automatically. Use the magpie gateway (remote-magpie/workbuddy/*) instead.",
   "type": "module",
   "keywords": [
-    "pi-package",
     "pi-extension",
     "workbuddy",
     "codebuddy",
@@ -33,5 +32,6 @@
     "index.ts",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "deprecated": "Superseded by magpie's WorkBuddy provider. This package is no longer auto-loaded by pi; install it explicitly only if you run your own workbuddy2api gateway."
 }

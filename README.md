@@ -95,20 +95,16 @@ pi install npm:@kvoon/pi-recent-models
 pi install git:github.com/kvoon3/pi-extensions
 ```
 
-### `pi-workbuddy`
+### `pi-workbuddy` — DEPRECATED
 
-Registers a shared [workbuddy2api](https://github.com/Sliverkiss/workbuddy2api) gateway as a Pi provider, with a live model catalog and a 0600 on-disk cache for offline starts. Credentials come from Pi's own `/login` — the extension never touches the API key. Model catalog only; the credits balance is shown by `pi-minimal-footer` from the gateway's `GET /v1/usage`.
+> **Deprecated.** Not listed in this repository's `pi.extensions` manifest any more, so `pi install git:github.com/kvoon3/pi-extensions` no longer installs or loads it. WorkBuddy now reaches Pi through [magpie](https://github.com/kvoon3/magpie)'s own provider (`remote-magpie/workbuddy/*`), which owns the credentials, catalog and quota tracking. The code stays here for anyone running a standalone [workbuddy2api](https://github.com/Sliverkiss/workbuddy2api) gateway.
 
-**npm**
+Registers a shared workbuddy2api gateway as a Pi provider, with a live model catalog and a 0600 on-disk cache for offline starts. Credentials come from Pi's own `/login` — the extension never touches the API key. Model catalog only; the credits balance is shown by `pi-minimal-footer` from the gateway's `GET /v1/usage`.
 
-```bash
-pi install npm:@kvoon/pi-workbuddy
-```
-
-**GitHub**
+Installing it is now an explicit opt-in:
 
 ```bash
-pi install git:github.com/kvoon3/pi-extensions
+pi install ./pi-workbuddy
 ```
 
 See [setup and behavior](./pi-workbuddy/README.md).
